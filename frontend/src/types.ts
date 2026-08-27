@@ -317,6 +317,15 @@ export interface LearnerStateResponse {
   nextBestAction: NextBestAction | null;
 }
 
+export interface GoalSummary {
+  roleId: string;
+  roleTitle: string;
+  progressPercent: number;
+  createdAt: number;
+  lastActiveAt: number;
+  isActive: boolean;
+}
+
 export interface StartModuleAssessmentResponse {
   sessionId: string;
   type: AssessmentType;

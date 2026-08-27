@@ -9,6 +9,7 @@ import {
   startModuleAssessment,
   startPracticeCheck,
 } from '../engines/moduleAssessmentEngine.js';
+import { getLearner } from '../store/learnerStore.js';
 
 export const moduleRouter = Router();
 
@@ -25,34 +26,55 @@ function sanitizeQuestion(question: { id: string; skill: string; topic: string; 
   };
 }
 
+/** Resolves the roleId this module belongs to: explicit query/body param, else the learner's currently active goal. */
+function resolveRoleId(req: { learnerId?: string }, given: unknown): string | null {
+  if (typeof given === 'string' && given.length > 0) return given;
+  return getLearner(req.learnerId!)?.activeRoleId ?? null;
+}
+
 moduleRouter.get('/:moduleId/state', (req, res) => {
   const { moduleId } = req.params;
-  const { skill } = req.query;
+  const { skill, roleId: roleIdParam } = req.query;
   if (typeof skill !== 'string') {
     res.status(400).json({ error: 'skill query param is required' });
     return;
   }
-  res.json(getModuleState(req.learnerId!, moduleId, skill));
+  const roleId = resolveRoleId(req, roleIdParam);
+  if (!roleId) {
+    res.status(400).json({ error: 'roleId is required (no active goal set)' });
+    return;
+  }
+  res.json(getModuleState(req.learnerId!, roleId, moduleId, skill));
 });
 
 moduleRouter.post('/:moduleId/start-learning', (req, res) => {
   const { moduleId } = req.params;
-  const { skill } = req.body ?? {};
+  const { skill, roleId: roleIdBody } = req.body ?? {};
   if (typeof skill !== 'string') {
     res.status(400).json({ error: 'skill is required' });
     return;
   }
-  res.json(markModuleLearningStarted(req.learnerId!, moduleId, skill));
+  const roleId = resolveRoleId(req, roleIdBody);
+  if (!roleId) {
+    res.status(400).json({ error: 'roleId is required (no active goal set)' });
+    return;
+  }
+  res.json(markModuleLearningStarted(req.learnerId!, roleId, moduleId, skill));
 });
 
 moduleRouter.post('/:moduleId/ready-for-assessment', (req, res) => {
   const { moduleId } = req.params;
-  const { skill } = req.body ?? {};
+  const { skill, roleId: roleIdBody } = req.body ?? {};
   if (typeof skill !== 'string') {
     res.status(400).json({ error: 'skill is required' });
     return;
   }
-  res.json(markModulePracticeReady(req.learnerId!, moduleId, skill));
+  const roleId = resolveRoleId(req, roleIdBody);
+  if (!roleId) {
+    res.status(400).json({ error: 'roleId is required (no active goal set)' });
+    return;
+  }
+  res.json(markModulePracticeReady(req.learnerId!, roleId, moduleId, skill));
 });
 
 moduleRouter.post('/:moduleId/start-assessment', (req, res) => {

@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrendingUp, CircleCheck } from 'lucide-react';
 import ProgressBar from '../components/ProgressBar.js';
 import EmptyState from '../components/EmptyState.js';
+import { api } from '../api.js';
 import { useLearner } from '../context/LearnerContext.js';
-import { useEnsureRoadmap, useEnsureLearnerState } from '../hooks/useEnsureData.js';
+import { useEnsureAnalysis, useEnsureRoadmap, useEnsureLearnerState } from '../hooks/useEnsureData.js';
+import type { AssessmentRecord } from '../types.js';
 
 const MASTERY_COLORS: Record<string, string> = {
   Beginner: 'bg-error',
@@ -14,14 +17,29 @@ const MASTERY_COLORS: Record<string, string> = {
 
 /**
  * Analytics/reporting view — "how am I doing overall" — distinct from Home
- * ("what do I do right now"). Achievements and activity are derived only
- * from real data already in context (analysis/roadmap/milestoneOverrides);
- * nothing here is fabricated history.
+ * ("what do I do right now"). Everything here is derived only from real data
+ * already in context or fetched from persisted server state (analysis,
+ * roadmap, assessment history, milestoneOverrides) — nothing here is
+ * fabricated, and metrics we don't actually track (study streak, hours this
+ * week) are intentionally omitted rather than invented.
  */
 export default function Dashboard() {
-  const { milestoneOverrides, effectiveStatus } = useLearner();
+  const { profile, milestoneOverrides, effectiveStatus } = useLearner();
+  const { analysis } = useEnsureAnalysis();
   const { roadmap, loading, needsAnalysis } = useEnsureRoadmap();
   const { nextBestAction } = useEnsureLearnerState();
+  const [recentAssessments, setRecentAssessments] = useState<AssessmentRecord[]>([]);
+
+  useEffect(() => {
+    if (!profile?.roleId) {
+      setRecentAssessments([]);
+      return;
+    }
+    api
+      .getAssessmentHistory({ roleId: profile.roleId })
+      .then(({ assessments }) => setRecentAssessments(assessments.filter((a) => a.status === 'completed').slice(0, 5)))
+      .catch(() => setRecentAssessments([]));
+  }, [profile?.roleId]);
 
   if (loading) return <p className="text-ink-secondary">Loading dashboard...</p>;
 
@@ -38,6 +56,10 @@ export default function Dashboard() {
   }
 
   const withStatus = roadmap.milestones.map((m) => ({ ...m, status: effectiveStatus(m.id, m.status) }));
+  const currentMilestone = withStatus.find((m) => m.status === 'in_progress') ?? withStatus.find((m) => m.status === 'available');
+
+  const skillsMastered = analysis ? analysis.skillResults.filter((s) => s.masteryLabel === 'Advanced').length : 0;
+  const totalSkillsTracked = analysis?.skillResults.length ?? roadmap.progress.total;
 
   const activity = Object.entries(milestoneOverrides)
     .filter(([, o]) => o.updatedAt > 0)
@@ -63,7 +85,7 @@ export default function Dashboard() {
 
       {nextBestAction && (
         <div className="p-5 rounded-xl bg-brand-50 border border-brand-200 mb-6">
-          <p className="text-brand-600 text-xs font-semibold mb-2 tracking-wide">YOUR NEXT BEST ACTION</p>
+          <p className="text-brand-600 text-xs font-semibold mb-2 tracking-wide">RECOMMENDED NEXT ACTION</p>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-ink font-semibold">{nextBestAction.label}</p>
@@ -79,9 +101,16 @@ export default function Dashboard() {
         </div>
       )}
 
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Overall Progress" value={`${roadmap.progress.percentComplete}%`} />
+        <StatCard label="Skills Mastered" value={`${skillsMastered} / ${totalSkillsTracked}`} />
+        <StatCard label="High-Priority Gaps" value={String(analysis?.highPriorityGaps.length ?? 0)} />
+        <StatCard label="Weeks Remaining" value={String(roadmap.totalEstimatedWeeks)} />
+      </div>
+
       <div className="p-5 rounded-xl bg-white border border-line shadow-sm mb-6">
         <div className="flex items-center justify-between mb-2 text-sm">
-          <span className="text-ink-secondary font-medium">Overall Progress</span>
+          <span className="text-ink-secondary font-medium">Roadmap Progress</span>
           <span className="text-ink-secondary">{roadmap.progress.percentComplete}% complete</span>
         </div>
         <ProgressBar value={roadmap.progress.percentComplete} colorClass="bg-success" />
@@ -90,8 +119,26 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {currentMilestone && (
+        <div className="p-5 rounded-xl bg-white border border-line shadow-sm mb-6">
+          <p className="text-ink-secondary text-xs font-semibold mb-1 tracking-wide">CURRENT MILESTONE</p>
+          <p className="text-ink font-semibold mb-3">{currentMilestone.skill}</p>
+          <ProgressBar value={currentMilestone.currentMastery} />
+          <div className="flex items-center justify-between mt-2 text-xs">
+            <span className="text-ink-muted">{currentMilestone.currentMastery}% mastery</span>
+            <span className="text-ink-muted">Target: {currentMilestone.targetMastery}%</span>
+          </div>
+          <Link
+            to={`/roadmap/${currentMilestone.id}`}
+            className="inline-block mt-3 text-brand-500 hover:text-brand-600 text-xs font-medium transition-colors"
+          >
+            Continue this milestone →
+          </Link>
+        </div>
+      )}
+
       <section className="mb-8">
-        <h2 className="text-ink font-semibold mb-4">Milestone Timeline</h2>
+        <h2 className="text-ink font-semibold mb-4">Roadmap Timeline</h2>
         <div className="flex flex-col gap-2">
           {withStatus.slice(0, 6).map((m) => (
             <div key={m.id} className="flex items-center gap-3 p-3 rounded-lg bg-white border border-line shadow-sm">
@@ -107,6 +154,30 @@ export default function Dashboard() {
           View full roadmap →
         </Link>
       </section>
+
+      {recentAssessments.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-ink font-semibold mb-4">Recent Assessments</h2>
+          <div className="flex flex-col gap-2">
+            {recentAssessments.map((a) => {
+              const score = a.skill ? a.scoreBySkill[a.skill]?.masteryScore ?? 0 : 0;
+              const milestone = roadmap.milestones.find((m) => m.skill === a.skill);
+              const passed = milestone ? score >= milestone.targetMastery : score >= 70;
+              return (
+                <div key={a.assessmentId} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-white border border-line shadow-sm">
+                  <span className="text-ink text-sm truncate">{a.skill ?? 'Diagnostic'}</span>
+                  <span className={`text-sm font-medium ${passed ? 'text-success' : 'text-warning'}`}>
+                    {score}% {passed ? 'Passed' : 'Needs Improvement'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <Link to="/assessments" className="inline-block mt-3 text-brand-500 hover:text-brand-600 text-xs font-medium transition-colors">
+            View all assessments →
+          </Link>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
         <section>
@@ -136,6 +207,15 @@ export default function Dashboard() {
           </ul>
         </section>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-4 rounded-xl bg-white border border-line shadow-sm">
+      <p className="text-ink text-xl font-bold">{value}</p>
+      <p className="text-ink-muted text-xs mt-1">{label}</p>
     </div>
   );
 }

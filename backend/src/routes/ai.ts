@@ -9,7 +9,7 @@ import { buildLearnerContext } from '../engines/contextEngine.js';
 import { aiService } from '../services/aiService.js';
 import { isAiConfigured, AI_CONFIG } from '../config.js';
 import { attachUser, requireAuth } from '../middleware/auth.js';
-import { getAssessmentHistory, getLearner } from '../store/learnerStore.js';
+import { getAssessmentHistory, getGoal } from '../store/learnerStore.js';
 import type { CoachMessage, LearnerProfile, SkillAnalysisResult } from '../types/index.js';
 
 export const aiRouter = Router();
@@ -35,7 +35,7 @@ function isValidHistory(history: unknown): history is CoachMessage[] {
  * falling back to the legacy sessionId path.
  */
 function resolveAnalysis(req: { learnerId?: string }, sessionId: unknown, roleId: unknown): SkillAnalysisResult | null {
-  if (req.learnerId && typeof roleId === 'string' && getLearner(req.learnerId)?.roleId) {
+  if (req.learnerId && typeof roleId === 'string' && getGoal(req.learnerId, roleId)) {
     try {
       return toSkillAnalysisResult(req.learnerId, roleId);
     } catch {
@@ -146,8 +146,8 @@ aiRouter.post('/coach', async (req, res) => {
 
   try {
     const roadmap = generateRoadmap(analysis, profile);
-    const assessmentHistory = req.learnerId ? getAssessmentHistory(req.learnerId) : [];
-    const moduleProgress = req.learnerId ? getLearner(req.learnerId)?.moduleProgress ?? {} : {};
+    const assessmentHistory = req.learnerId ? getAssessmentHistory(req.learnerId, analysis.roleId) : [];
+    const moduleProgress = req.learnerId ? getGoal(req.learnerId, analysis.roleId)?.moduleProgress ?? {} : {};
     const context = buildLearnerContext(profile, analysis, roadmap, assessmentHistory, moduleProgress);
     const result = await aiService.chatWithLearner(context, chatHistory, message.trim());
     res.json(result);

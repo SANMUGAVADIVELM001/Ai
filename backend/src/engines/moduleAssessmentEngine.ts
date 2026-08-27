@@ -33,38 +33,39 @@ function defaultModuleProgress(moduleId: string, skill: string): ModuleProgressR
   };
 }
 
-export function getModuleState(learnerId: string, moduleId: string, skill: string): ModuleProgressRecord {
-  return getModuleProgress(learnerId, moduleId) ?? defaultModuleProgress(moduleId, skill);
+export function getModuleState(learnerId: string, roleId: string, moduleId: string, skill: string): ModuleProgressRecord {
+  return getModuleProgress(learnerId, roleId, moduleId) ?? defaultModuleProgress(moduleId, skill);
 }
 
-export function markModuleLearningStarted(learnerId: string, moduleId: string, skill: string): ModuleProgressRecord {
-  const current = getModuleState(learnerId, moduleId, skill);
+export function markModuleLearningStarted(learnerId: string, roleId: string, moduleId: string, skill: string): ModuleProgressRecord {
+  const current = getModuleState(learnerId, roleId, moduleId, skill);
   if (current.phase === 'not_started') {
     const next: ModuleProgressRecord = { ...current, phase: 'learning', updatedAt: Date.now() };
-    upsertModuleProgress(learnerId, next);
+    upsertModuleProgress(learnerId, roleId, next);
     return next;
   }
   return current;
 }
 
-export function markModulePracticeReady(learnerId: string, moduleId: string, skill: string): ModuleProgressRecord {
-  const current = getModuleState(learnerId, moduleId, skill);
+export function markModulePracticeReady(learnerId: string, roleId: string, moduleId: string, skill: string): ModuleProgressRecord {
+  const current = getModuleState(learnerId, roleId, moduleId, skill);
   const next: ModuleProgressRecord = { ...current, phase: 'assessment_ready', updatedAt: Date.now() };
-  upsertModuleProgress(learnerId, next);
+  upsertModuleProgress(learnerId, roleId, next);
   return next;
 }
 
-function nextAttemptNumber(learnerId: string, skill: string, type: AssessmentType): number {
-  return getAssessmentHistory(learnerId, { skill, type }).length + 1;
+function nextAttemptNumber(learnerId: string, roleId: string, skill: string, type: AssessmentType): number {
+  return getAssessmentHistory(learnerId, roleId, { skill, type }).length + 1;
 }
 
 export function startModuleAssessment(learnerId: string, roleId: string, moduleId: string, skill: string): AssessmentSession {
-  const progress = getModuleState(learnerId, moduleId, skill);
+  const progress = getModuleState(learnerId, roleId, moduleId, skill);
   const isRetry = progress.phase === 'remedial';
   const type: AssessmentType = isRetry ? 'REASSESSMENT' : 'MODULE_ASSESSMENT';
 
   const plannedQuestions = planQuestionSet(
     learnerId,
+    roleId,
     skill,
     type,
     MASTERY_CONFIG.moduleAssessmentQuestionCount,
@@ -76,7 +77,7 @@ export function startModuleAssessment(learnerId: string, roleId: string, moduleI
     type,
     skill,
     moduleId,
-    attemptNumber: nextAttemptNumber(learnerId, skill, type),
+    attemptNumber: nextAttemptNumber(learnerId, roleId, skill, type),
     plannedQuestions,
   };
 
@@ -86,13 +87,13 @@ export function startModuleAssessment(learnerId: string, roleId: string, moduleI
 }
 
 export function startPracticeCheck(learnerId: string, roleId: string, skill: string, topics?: string[]): AssessmentSession {
-  const plannedQuestions = planQuestionSet(learnerId, skill, 'PRACTICE_CHECK', MASTERY_CONFIG.practiceCheckQuestionCount, topics);
+  const plannedQuestions = planQuestionSet(learnerId, roleId, skill, 'PRACTICE_CHECK', MASTERY_CONFIG.practiceCheckQuestionCount, topics);
   const opts: CreateSessionOptions = {
     learnerId,
     type: 'PRACTICE_CHECK',
     skill,
     moduleId: null,
-    attemptNumber: nextAttemptNumber(learnerId, skill, 'PRACTICE_CHECK'),
+    attemptNumber: nextAttemptNumber(learnerId, roleId, skill, 'PRACTICE_CHECK'),
     plannedQuestions,
   };
   const session = createSession(roleId, opts);
@@ -117,7 +118,7 @@ function seedAssessmentRecord(session: AssessmentSession): void {
     completedAt: null,
     scoreBySkill: {},
   };
-  upsertAssessmentRecord(session.learnerId, record);
+  upsertAssessmentRecord(session.learnerId, session.roleId, record);
 }
 
 export interface CompleteAssessmentResult {
@@ -174,7 +175,7 @@ export function completeAssessment(sessionId: string): CompleteAssessmentResult 
     completedAt: Date.now(),
     scoreBySkill: { [skill]: { rawScore: state.rawScore, maxPossibleScore: state.maxPossibleScore, masteryScore: score } },
   };
-  upsertAssessmentRecord(session.learnerId, record);
+  upsertAssessmentRecord(session.learnerId, session.roleId, record);
 
   const masteryUpdate = updateMasteryFromAssessment(session.learnerId, session.roleId, skill, score, session.id, session.type);
 
@@ -184,11 +185,11 @@ export function completeAssessment(sessionId: string): CompleteAssessmentResult 
   }
 
   const moduleId = session.moduleId ?? skill;
-  const progress = getModuleState(session.learnerId, moduleId, skill);
+  const progress = getModuleState(session.learnerId, session.roleId, moduleId, skill);
   const passed = score >= progress.passingThreshold;
 
   if (passed) {
-    upsertModuleProgress(session.learnerId, {
+    upsertModuleProgress(session.learnerId, session.roleId, {
       ...progress,
       phase: 'passed',
       lastAssessmentId: session.id,
@@ -210,7 +211,7 @@ export function completeAssessment(sessionId: string): CompleteAssessmentResult 
 
   const remedialResourceIds = weakTopics.length > 0 ? findRemedialResourceIds(session.learnerId, session.roleId, skill) : [];
 
-  upsertModuleProgress(session.learnerId, {
+  upsertModuleProgress(session.learnerId, session.roleId, {
     ...progress,
     phase: 'remedial',
     lastAssessmentId: session.id,

@@ -1,5 +1,5 @@
 import { MASTERY_CONFIG, SUFFICIENCY_MARGIN, priorityFor } from '../config.js';
-import { getOrCreateLearner, setLearnerRole } from '../store/learnerStore.js';
+import { getOrCreateGoal, setActiveGoal, upsertMastery } from '../store/learnerStore.js';
 import { getRoleById } from './profileEngine.js';
 import { buildAiExplanation } from './skillEngine.js';
 import type {
@@ -56,13 +56,13 @@ export function bootstrapMasteryFromDiagnostic(
   analysis: SkillAnalysisResult,
   assessmentId: string
 ): void {
-  const learner = getOrCreateLearner(learnerId);
-  setLearnerRole(learnerId, roleId);
+  setActiveGoal(learnerId, roleId);
+  const goal = getOrCreateGoal(learnerId, roleId);
   const now = Date.now();
 
   for (const result of analysis.skillResults) {
     const target = targetFor(roleId, result.skill);
-    const existing = learner.mastery[result.skill];
+    const existing = goal.mastery[result.skill];
     // Retaking the diagnostic re-measures the skills it covers, but must not
     // discard prior module-assessment history for a skill already tracked —
     // it's still a new measurement, so it's recorded as bootstrap-strength
@@ -70,7 +70,7 @@ export function bootstrapMasteryFromDiagnostic(
     const history = existing ? [...existing.history] : [];
     history.push({ assessmentId, type: 'INITIAL_DIAGNOSTIC', score: result.masteryScore, at: now });
 
-    learner.mastery[result.skill] = {
+    upsertMastery(learnerId, roleId, {
       skill: result.skill,
       current: result.masteryScore,
       target,
@@ -80,9 +80,8 @@ export function bootstrapMasteryFromDiagnostic(
       lastAssessedAt: now,
       confidence: confidenceFor((existing?.assessmentCount ?? 0) + 1),
       history,
-    };
+    });
   }
-  learner.lastActiveAt = now;
 }
 
 /**
@@ -98,8 +97,8 @@ export function updateMasteryFromAssessment(
   assessmentId: string,
   type: AssessmentType
 ): SkillMasteryRecord {
-  const learner = getOrCreateLearner(learnerId);
-  const previous = learner.mastery[skill] ?? blankRecord(skill, roleId);
+  const goal = getOrCreateGoal(learnerId, roleId);
+  const previous = goal.mastery[skill] ?? blankRecord(skill, roleId);
   const now = Date.now();
 
   const effectiveWeight = MASTERY_CONFIG.newEvidenceWeight * MASTERY_CONFIG.typeWeightMultiplier[type];
@@ -122,8 +121,7 @@ export function updateMasteryFromAssessment(
     history,
   };
 
-  learner.mastery[skill] = record;
-  learner.lastActiveAt = now;
+  upsertMastery(learnerId, roleId, record);
   return record;
 }
 
@@ -132,11 +130,11 @@ export function updateMasteryFromAssessment(
  * placeholder so callers never have to null-check "has this been measured."
  */
 export function getLearnerMasteryForRole(learnerId: string, roleId: string): SkillMasteryRecord[] {
-  const learner = getOrCreateLearner(learnerId);
+  const goal = getOrCreateGoal(learnerId, roleId);
   const role = getRoleById(roleId);
   if (!role) throw new Error(`Unknown role: ${roleId}`);
 
-  return role.skills.map((req) => learner.mastery[req.skill] ?? blankRecord(req.skill, roleId));
+  return role.skills.map((req) => goal.mastery[req.skill] ?? blankRecord(req.skill, roleId));
 }
 
 function skillResultFromMastery(record: SkillMasteryRecord): SkillResult {

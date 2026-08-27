@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getRoleById } from '../engines/profileEngine.js';
 import { updateMasteryFromAssessment } from '../engines/masteryEngine.js';
-import { getLearner, resetLearner, setLearnerRole } from '../store/learnerStore.js';
+import { getLearner, resetLearner, setActiveGoal } from '../store/learnerStore.js';
 
 export const devRouter = Router();
 
@@ -29,7 +29,7 @@ devRouter.post('/simulate-attempt', (req, res) => {
     return;
   }
 
-  setLearnerRole(learnerId, roleId);
+  setActiveGoal(learnerId, roleId);
   const score = outcome === 'strong' ? 85 + Math.round(Math.random() * 10) : 30 + Math.round(Math.random() * 15);
   const fakeAssessmentId = `dev-sim-${Date.now()}`;
   const record = updateMasteryFromAssessment(learnerId, roleId, skill, score, fakeAssessmentId, 'MODULE_ASSESSMENT');
@@ -47,7 +47,7 @@ devRouter.post('/set-mastery', (req, res) => {
     return;
   }
 
-  setLearnerRole(learnerId, roleId);
+  setActiveGoal(learnerId, roleId);
   const results = Object.entries(overrides as Record<string, unknown>)
     .filter(([, score]) => typeof score === 'number')
     .map(([skill, score]) =>

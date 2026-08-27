@@ -6,6 +6,7 @@ import AppShell from './components/AppShell.js';
 import Login from './pages/Login.js';
 import Signup from './pages/Signup.js';
 import Home from './pages/Home.js';
+import MyGoals from './pages/MyGoals.js';
 import Assessment from './pages/Assessment.js';
 import SkillAnalysis from './pages/SkillAnalysis.js';
 import Roadmap from './pages/Roadmap.js';
@@ -25,6 +26,7 @@ function AuthenticatedApp() {
         <AppShell>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/goals" element={<MyGoals />} />
             <Route path="/assessment" element={<Assessment />} />
             <Route path="/skills" element={<SkillAnalysis />} />
             <Route path="/roadmap" element={<Roadmap />} />

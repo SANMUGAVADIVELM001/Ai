@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Sparkles, CircleCheck } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Sparkles, CircleCheck, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../api.js';
 import { useLearner } from '../context/LearnerContext.js';
 import { useEnsureAnalysis } from '../hooks/useEnsureData.js';
@@ -25,6 +25,7 @@ type Step = 'goal' | 'intro' | 'test' | 'result';
  */
 export default function Assessment() {
   const { profile, sessionId, analysis } = useLearner();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Whether this page mount already had a session with no analysis yet
   // (i.e. the diagnostic was in progress before this page loaded, most
@@ -35,20 +36,48 @@ export default function Assessment() {
   const [resumingExistingSession] = useState(() => !!sessionId && !analysis);
   const { loading: analysisLoading } = useEnsureAnalysis(resumingExistingSession);
 
-  const [step, setStep] = useState<Step>(() => {
+  const [step, setStepState] = useState<Step>(() => {
+    const fromUrl = searchParams.get('step') as Step | null;
+    if (fromUrl && ['goal', 'intro', 'test', 'result'].includes(fromUrl)) return fromUrl;
     if (sessionId && analysis) return 'result';
     if (sessionId) return 'test';
     if (profile) return 'intro';
     return 'goal';
   });
 
+  // Reflects the current step into the URL (?step=...) so the browser's
+  // Back/Forward buttons move between steps instead of leaving the page —
+  // pushState per transition, replaceState for the sync-only initial mount.
+  function setStep(next: Step, replace = false) {
+    setStepState(next);
+    const params = new URLSearchParams(searchParams);
+    params.set('step', next);
+    setSearchParams(params, { replace });
+  }
+
+  useEffect(() => {
+    setStep(step, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Following browser Back/Forward: when the URL's step param changes from
+  // outside our own setStep calls (i.e. a popstate), sync local state to it.
+  useEffect(() => {
+    const fromUrl = searchParams.get('step') as Step | null;
+    if (fromUrl && fromUrl !== step && ['goal', 'intro', 'test', 'result'].includes(fromUrl)) {
+      setStepState(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // Keep step in sync only when resuming a pre-existing session (e.g. after
   // refresh); a session started locally this visit progresses via the
   // onDone callbacks passed to each step instead.
   useEffect(() => {
     if (!resumingExistingSession) return;
-    if (sessionId && analysis) setStep('result');
-    else if (sessionId && !analysis && !analysisLoading) setStep('test');
+    if (sessionId && analysis) setStep('result', true);
+    else if (sessionId && !analysis && !analysisLoading) setStep('test', true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumingExistingSession, sessionId, analysis, analysisLoading]);
 
   if (resumingExistingSession && analysisLoading) {
@@ -208,13 +237,22 @@ function IntroStep({ onDone, onBack }: { onDone: () => void; onBack: () => void 
         </div>
       </div>
 
-      <button
-        onClick={handleStart}
-        disabled={starting || !role}
-        className="px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white font-semibold transition-colors"
-      >
-        {starting ? 'Starting...' : 'Start Assessment'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onBack}
+          disabled={starting}
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg border border-line text-ink-secondary hover:bg-surface-secondary disabled:opacity-40 text-sm font-medium transition-colors"
+        >
+          <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" /> Back
+        </button>
+        <button
+          onClick={handleStart}
+          disabled={starting || !role}
+          className="px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white font-semibold transition-colors"
+        >
+          {starting ? 'Starting...' : 'Start Assessment'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -234,17 +272,31 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   hard: 'text-error bg-error-bg',
 };
 
+interface AnsweredEntry {
+  question: AssessmentQuestion;
+  skillsRemaining: number;
+  totalSkills: number;
+  selected: number | null;
+  feedback: SubmitAnswerResponse | null;
+}
+
+/**
+ * Maintains a local, append-only history of every question served this
+ * session so Previous/Next can move between them without ever asking the
+ * server for a "previous" question (the adaptive engine only knows how to
+ * serve the next one). Going back never mutates server state — it's a
+ * read-only view of an already-answered entry, selection and feedback
+ * included. Only advancing past the newest entry calls the server, and only
+ * once per new question (re-visiting a later entry after going back does
+ * not re-fetch).
+ */
 function TestStep({ onDone }: { onDone: () => void }) {
   const { sessionId, setAnalysis } = useLearner();
 
-  const [question, setQuestion] = useState<AssessmentQuestion | null>(null);
-  const [skillsRemaining, setSkillsRemaining] = useState(0);
-  const [totalSkills, setTotalSkills] = useState(0);
-  const [questionNumber, setQuestionNumber] = useState(0);
-
-  const [selected, setSelected] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState<SubmitAnswerResponse | null>(null);
+  const [history, setHistory] = useState<AnsweredEntry[]>([]);
+  const [viewIndex, setViewIndex] = useState(-1);
   const [loading, setLoading] = useState(true);
+  const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -255,44 +307,62 @@ function TestStep({ onDone }: { onDone: () => void }) {
   async function loadNext() {
     if (!sessionId) return;
     setLoading(true);
-    setSelected(null);
-    setFeedback(null);
     const res = await api.nextQuestion(sessionId);
     if (res.done || !res.question) {
+      setFinishing(true);
       const { analysis } = await api.getResult(sessionId);
       setAnalysis(analysis);
       onDone();
       return;
     }
-    setQuestion(res.question);
-    setSkillsRemaining(res.skillsRemaining ?? 0);
-    setTotalSkills(res.totalSkills ?? 0);
-    setQuestionNumber((n) => n + 1);
+    setHistory((prev) => {
+      const next = [...prev, { question: res.question!, skillsRemaining: res.skillsRemaining ?? 0, totalSkills: res.totalSkills ?? 0, selected: null, feedback: null }];
+      setViewIndex(next.length - 1);
+      return next;
+    });
     setLoading(false);
   }
 
   async function handleSelect(optionIndex: number) {
-    if (!sessionId || !question || feedback) return;
-    setSelected(optionIndex);
-    const result = await api.submitAnswer(sessionId, question.id, optionIndex);
-    setFeedback(result);
+    const current = history[viewIndex];
+    if (!sessionId || !current || current.feedback) return;
+    const result = await api.submitAnswer(sessionId, current.question.id, optionIndex);
+    setHistory((prev) => prev.map((entry, i) => (i === viewIndex ? { ...entry, selected: optionIndex, feedback: result } : entry)));
   }
 
-  if (loading || !question) {
+  function goBack() {
+    setViewIndex((i) => Math.max(0, i - 1));
+  }
+
+  async function goForward() {
+    if (viewIndex < history.length - 1) {
+      setViewIndex((i) => i + 1);
+      return;
+    }
+    // At the newest entry — advancing means asking the server for the next question.
+    await loadNext();
+  }
+
+  if ((loading && history.length === 0) || finishing) {
     return <p className="text-ink-secondary">Loading question...</p>;
   }
 
-  const skillsCompleted = totalSkills - skillsRemaining;
-  const overallProgress = totalSkills > 0 ? (skillsCompleted / totalSkills) * 100 : 0;
+  const current = history[viewIndex];
+  if (!current) return <p className="text-ink-secondary">Loading question...</p>;
+
+  const { question, selected, feedback } = current;
+  const skillsCompleted = current.totalSkills - current.skillsRemaining;
+  const overallProgress = current.totalSkills > 0 ? (skillsCompleted / current.totalSkills) * 100 : 0;
+  const isReviewingPast = viewIndex < history.length - 1;
 
   return (
     <div>
       <div className="mb-6">
         <div className="flex items-center justify-between text-sm text-ink-secondary mb-2">
           <span>
-            Skill {skillsCompleted + 1} of {totalSkills}
+            Skill {skillsCompleted + 1} of {current.totalSkills}
           </span>
-          <span>Question {questionNumber}</span>
+          <span>Question {viewIndex + 1}</span>
         </div>
         <ProgressBar value={overallProgress} />
       </div>
@@ -303,6 +373,9 @@ function TestStep({ onDone }: { onDone: () => void }) {
           <span className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize ${DIFFICULTY_COLORS[question.difficulty]}`}>
             {question.difficulty}
           </span>
+          {isReviewingPast && (
+            <span className="px-2.5 py-1 rounded-md bg-surface-secondary text-ink-muted text-xs font-medium">Reviewing</span>
+          )}
         </div>
 
         <h2 className="text-lg font-semibold text-ink mb-5">{question.question}</h2>
@@ -344,14 +417,30 @@ function TestStep({ onDone }: { onDone: () => void }) {
           </div>
         )}
 
-        {feedback && (
+        <div className="mt-5 flex items-center gap-3">
           <button
-            onClick={loadNext}
-            className="mt-5 px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold transition-colors"
+            onClick={goBack}
+            disabled={viewIndex === 0}
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg border border-line text-ink-secondary hover:bg-surface-secondary disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
           >
-            Next
+            <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" /> Previous
           </button>
-        )}
+          {feedback && (
+            <button
+              onClick={goForward}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white font-semibold transition-colors"
+            >
+              {isReviewingPast ? (
+                <>
+                  Next <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
+                </>
+              ) : (
+                'Next'
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

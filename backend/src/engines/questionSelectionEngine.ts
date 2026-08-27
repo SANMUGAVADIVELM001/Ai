@@ -56,6 +56,7 @@ function byDifficultyDistance(pool: Question[], target: Difficulty): Question[] 
 export interface SelectQuestionsParams {
   skill: string;
   learnerId: string;
+  roleId: string;
   assessmentType: AssessmentType;
   difficulty: Difficulty;
   count: number;
@@ -73,9 +74,9 @@ export interface SelectQuestionsParams {
  * option order (preserving the correct answer).
  */
 export function selectQuestions(params: SelectQuestionsParams): Question[] {
-  const { skill, learnerId, difficulty, count, requireTopics = [], additionalExcludeIds = [] } = params;
+  const { skill, learnerId, roleId, difficulty, count, requireTopics = [], additionalExcludeIds = [] } = params;
 
-  const seen = new Set([...getRecentlySeenQuestionIds(learnerId), ...additionalExcludeIds]);
+  const seen = new Set([...getRecentlySeenQuestionIds(learnerId, roleId), ...additionalExcludeIds]);
   const fullPool = questionsForSkill(skill);
   const unseenPool = fullPool.filter((q) => !seen.has(q.id));
   // If avoiding seen questions would leave too few to reach `count` (small
@@ -126,6 +127,7 @@ export function selectQuestions(params: SelectQuestionsParams): Question[] {
  */
 export function planQuestionSet(
   learnerId: string,
+  roleId: string,
   skill: string,
   type: AssessmentType,
   count: number,
@@ -134,6 +136,7 @@ export function planQuestionSet(
   return selectQuestions({
     skill,
     learnerId,
+    roleId,
     assessmentType: type,
     difficulty: 'medium',
     count,

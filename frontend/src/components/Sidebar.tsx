@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   House,
+  Target,
   Brain,
   ChartNoAxesCombined,
   Map,
@@ -25,6 +26,7 @@ interface NavItem {
 
 const PRIMARY_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', Icon: House },
+  { to: '/goals', label: 'My Goals', Icon: Target },
   { to: '/assessment', label: 'Assessment', Icon: Brain },
   { to: '/skills', label: 'My Skills', Icon: ChartNoAxesCombined },
   { to: '/roadmap', label: 'Roadmap', Icon: Map },

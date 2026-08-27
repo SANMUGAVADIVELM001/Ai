@@ -4,7 +4,7 @@ import { buildPrerequisiteGraph } from '../engines/prerequisiteEngine.js';
 import { getSession } from '../engines/assessmentEngine.js';
 import { analyzeSession } from '../engines/skillEngine.js';
 import { toSkillAnalysisResult } from '../engines/masteryEngine.js';
-import { getLearner } from '../store/learnerStore.js';
+import { getGoal } from '../store/learnerStore.js';
 import { attachUser, requireAuth } from '../middleware/auth.js';
 import type { LearnerProfile } from '../types/index.js';
 
@@ -36,7 +36,7 @@ resourcesRouter.post('/recommended', (req, res) => {
 
   try {
     let analysis;
-    if (req.learnerId && typeof roleId === 'string' && getLearner(req.learnerId)?.roleId) {
+    if (req.learnerId && typeof roleId === 'string' && getGoal(req.learnerId, roleId)) {
       analysis = toSkillAnalysisResult(req.learnerId, roleId);
     } else if (typeof sessionId === 'string' && getSession(sessionId)) {
       analysis = analyzeSession(sessionId);

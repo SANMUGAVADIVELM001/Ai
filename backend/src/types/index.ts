@@ -386,15 +386,30 @@ export interface ModuleProgressRecord {
   updatedAt: number;
 }
 
-export interface LearnerRecord {
-  learnerId: string;
+/**
+ * All state for one learner's pursuit of one role/goal: mastery, seen
+ * questions (so reassessments don't repeat), assessment history, and module
+ * progress. Fully independent from every other goal the same learner has —
+ * switching the active goal never touches another goal's GoalState.
+ */
+export interface GoalState {
+  roleId: string;
   createdAt: number;
   lastActiveAt: number;
-  roleId: string | null;
   mastery: Record<string, SkillMasteryRecord>;
   seenQuestionIds: string[]; // rolling window, most-recent-last
   assessments: AssessmentRecord[];
   moduleProgress: Record<string, ModuleProgressRecord>;
+}
+
+export interface LearnerRecord {
+  learnerId: string;
+  createdAt: number;
+  lastActiveAt: number;
+  /** The goal currently shown in Home/Dashboard/Roadmap. Null until the learner picks a first goal. */
+  activeRoleId: string | null;
+  /** One GoalState per role the learner has ever started, keyed by roleId. */
+  goals: Record<string, GoalState>;
 }
 
 // ---- Next best action ----

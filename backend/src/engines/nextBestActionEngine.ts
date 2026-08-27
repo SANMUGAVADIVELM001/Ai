@@ -28,12 +28,13 @@ function actionFor(
  */
 export function computeNextBestAction(
   learnerId: string,
+  roleId: string,
   roadmap: Roadmap,
   moduleProgressAll: Record<string, ModuleProgressRecord>
 ): NextBestAction | null {
   const withProgress = roadmap.milestones.map((m) => ({
     milestone: m,
-    progress: moduleProgressAll[m.id] ?? getModuleState(learnerId, m.id, m.skill),
+    progress: moduleProgressAll[m.id] ?? getModuleState(learnerId, roleId, m.id, m.skill),
   }));
 
   // 1. Pending assessment.

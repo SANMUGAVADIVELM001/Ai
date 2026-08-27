@@ -4,6 +4,7 @@ import type {
   AssessmentRecord,
   AssessmentType,
   CoachMessage,
+  GoalSummary,
   LearnerProfile,
   LearnerStateResponse,
   ModuleProgressRecord,
@@ -115,35 +116,51 @@ export const api = {
 
   // ---- Persistent learner state ----
 
-  getLearnerState: (profile: LearnerProfile | null) =>
+  getLearnerState: (profile: LearnerProfile | null, roleId?: string) =>
     request<LearnerStateResponse>('/learner/me', {
       method: 'POST',
-      body: JSON.stringify({ profile }),
+      body: JSON.stringify({ profile, roleId }),
     }),
 
-  getAssessmentHistory: (filter?: { skill?: string; type?: AssessmentType }) => {
+  getAssessmentHistory: (filter?: { skill?: string; type?: AssessmentType; roleId?: string }) => {
     const params = new URLSearchParams();
     if (filter?.skill) params.set('skill', filter.skill);
     if (filter?.type) params.set('type', filter.type);
+    if (filter?.roleId) params.set('roleId', filter.roleId);
     const qs = params.toString();
     return request<{ assessments: AssessmentRecord[] }>(`/learner/assessments${qs ? `?${qs}` : ''}`);
   },
 
-  // ---- Module assessment flow ----
+  // ---- Goals (multi-goal support) ----
 
-  getModuleState: (moduleId: string, skill: string) =>
-    request<ModuleProgressRecord>(`/module/${moduleId}/state?skill=${encodeURIComponent(skill)}`),
+  getGoals: () => request<{ goals: GoalSummary[]; activeRoleId: string | null }>('/learner/goals'),
 
-  startModuleLearning: (moduleId: string, skill: string) =>
-    request<ModuleProgressRecord>(`/module/${moduleId}/start-learning`, {
+  activateGoal: (roleId: string) =>
+    request<{ activeRoleId: string }>('/learner/goals/activate', {
       method: 'POST',
-      body: JSON.stringify({ skill }),
+      body: JSON.stringify({ roleId }),
     }),
 
-  markReadyForAssessment: (moduleId: string, skill: string) =>
+  resetGoal: (roleId: string) =>
+    request<{ reset: boolean }>(`/learner/goals/${encodeURIComponent(roleId)}/reset`, { method: 'POST' }),
+
+  // ---- Module assessment flow ----
+
+  getModuleState: (moduleId: string, skill: string, roleId?: string) =>
+    request<ModuleProgressRecord>(
+      `/module/${moduleId}/state?skill=${encodeURIComponent(skill)}${roleId ? `&roleId=${encodeURIComponent(roleId)}` : ''}`
+    ),
+
+  startModuleLearning: (moduleId: string, skill: string, roleId?: string) =>
+    request<ModuleProgressRecord>(`/module/${moduleId}/start-learning`, {
+      method: 'POST',
+      body: JSON.stringify({ skill, roleId }),
+    }),
+
+  markReadyForAssessment: (moduleId: string, skill: string, roleId?: string) =>
     request<ModuleProgressRecord>(`/module/${moduleId}/ready-for-assessment`, {
       method: 'POST',
-      body: JSON.stringify({ skill }),
+      body: JSON.stringify({ skill, roleId }),
     }),
 
   startModuleAssessment: (moduleId: string, skill: string, roleId: string) =>

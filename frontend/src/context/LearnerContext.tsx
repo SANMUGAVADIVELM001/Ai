@@ -1,12 +1,13 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext.js';
-import type { LearnerProfile, MilestoneStatus, ModuleProgressRecord, NextBestAction, Roadmap, SkillAnalysisResult } from '../types.js';
+import { api } from '../api.js';
+import type { GoalSummary, LearnerProfile, MilestoneStatus, ModuleProgressRecord, NextBestAction, Roadmap, SkillAnalysisResult } from '../types.js';
 
 function milestoneOverridesKey(learnerId: string): string {
   return `pathai:${learnerId}:milestoneOverrides`;
 }
-function profileKey(learnerId: string): string {
-  return `pathai:${learnerId}:profile`;
+function profilesByGoalKey(learnerId: string): string {
+  return `pathai:${learnerId}:profilesByGoal`;
 }
 function sessionKey(learnerId: string): string {
   return `pathai:${learnerId}:sessionId`;
@@ -79,6 +80,22 @@ interface LearnerContextValue {
   clearLearnerState: () => void;
   /** Clears client-side milestone progress overrides only. */
   resetMilestoneOverrides: () => void;
+
+  // ---- Multi-goal support ----
+  /** Every goal (role) this learner has ever started, each with independent server-side progress. */
+  goals: GoalSummary[];
+  goalsLoading: boolean;
+  /** Re-fetches the goal list from the server (call after completing a diagnostic for a new/existing goal). */
+  refreshGoals: () => Promise<void>;
+  /**
+   * Switches the active goal: persists the choice server-side, swaps in that
+   * goal's locally-cached LearnerProfile (goal text/timeline/preferences),
+   * and clears analysis/roadmap/moduleProgress/nextBestAction/sessionId so
+   * the data hooks re-fetch fresh state for the new roleId. Other goals'
+   * server-side mastery/assessment history/module progress are never
+   * touched by this — they're stored independently, keyed by roleId.
+   */
+  switchGoal: (roleId: string) => Promise<void>;
 }
 
 const LearnerContext = createContext<LearnerContextValue | undefined>(undefined);
@@ -86,7 +103,15 @@ const LearnerContext = createContext<LearnerContextValue | undefined>(undefined)
 export function LearnerProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const learnerId = user!.id;
-  const [profile, setProfileState] = useState<LearnerProfile | null>(() => loadFromStorage(profileKey(learnerId)));
+
+  const [profilesByGoal, setProfilesByGoal] = useState<Record<string, LearnerProfile>>(
+    () => loadFromStorage(profilesByGoalKey(learnerId)) ?? {}
+  );
+  const [profile, setProfileState] = useState<LearnerProfile | null>(() => {
+    const byGoal = loadFromStorage<Record<string, LearnerProfile>>(profilesByGoalKey(learnerId)) ?? {};
+    const values = Object.values(byGoal);
+    return values[0] ?? null;
+  });
   const [sessionId, setSessionIdState] = useState<string | null>(() => loadFromStorage(sessionKey(learnerId)));
   const [analysis, setAnalysis] = useState<SkillAnalysisResult | null>(null);
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
@@ -94,18 +119,79 @@ export function LearnerProvider({ children }: { children: React.ReactNode }) {
   const [nextBestAction, setNextBestAction] = useState<NextBestAction | null>(null);
   const [milestoneOverrides, setMilestoneOverrides] = useState<Record<string, MilestoneOverride>>(() => loadOverrides(learnerId));
 
+  const [goals, setGoals] = useState<GoalSummary[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
+
   useEffect(() => {
     saveToStorage(milestoneOverridesKey(learnerId), milestoneOverrides);
   }, [learnerId, milestoneOverrides]);
 
+  const refreshGoals = useCallback(async () => {
+    setGoalsLoading(true);
+    try {
+      const { goals: list, activeRoleId } = await api.getGoals();
+      setGoals(list);
+      // If the server has an active goal but this tab's profile doesn't
+      // match it (e.g. after a hard refresh), prefer the cached profile for
+      // that roleId so goal text/timeline/preferences survive reloads.
+      if (activeRoleId && profile?.roleId !== activeRoleId) {
+        const cached = profilesByGoal[activeRoleId];
+        if (cached) setProfileState(cached);
+      }
+    } catch {
+      setGoals([]);
+    } finally {
+      setGoalsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    refreshGoals();
+  }, [refreshGoals]);
+
   function setProfile(p: LearnerProfile) {
     setProfileState(p);
-    saveToStorage(profileKey(learnerId), p);
+    if (p.roleId) {
+      const next = { ...profilesByGoal, [p.roleId]: p };
+      setProfilesByGoal(next);
+      saveToStorage(profilesByGoalKey(learnerId), next);
+    }
   }
 
   function setSessionId(id: string | null) {
     setSessionIdState(id);
     saveToStorage(sessionKey(learnerId), id);
+  }
+
+  async function switchGoal(roleId: string) {
+    await api.activateGoal(roleId);
+    setAnalysis(null);
+    setRoadmap(null);
+    setModuleProgress({});
+    setNextBestAction(null);
+    setSessionId(null);
+    const cached = profilesByGoal[roleId];
+    if (cached) {
+      setProfileState(cached);
+    } else {
+      // First time switching to a goal started elsewhere (no cached profile
+      // in this browser) — build a minimal profile from the role so the
+      // roadmap/analysis hooks (which key off profile.roleId) can still run.
+      const { roles } = await api.getRoles();
+      const role = roles.find((r) => r.id === roleId);
+      const minimal: LearnerProfile = {
+        goal: role?.title ?? roleId,
+        roleId,
+        targetDuration: null,
+        currentSkills: [],
+        studyTimePerDay: null,
+        learningPreferences: [],
+        experienceLevel: null,
+      };
+      setProfile(minimal);
+    }
+    await refreshGoals();
   }
 
   function setMilestoneInProgress(milestoneId: string) {
@@ -129,7 +215,6 @@ export function LearnerProvider({ children }: { children: React.ReactNode }) {
     setSessionIdState(null);
     setAnalysis(null);
     setRoadmap(null);
-    saveToStorage(profileKey(learnerId), null);
     saveToStorage(sessionKey(learnerId), null);
   }
 
@@ -159,6 +244,10 @@ export function LearnerProvider({ children }: { children: React.ReactNode }) {
         effectiveStatus,
         clearLearnerState,
         resetMilestoneOverrides,
+        goals,
+        goalsLoading,
+        refreshGoals,
+        switchGoal,
       }}
     >
       {children}

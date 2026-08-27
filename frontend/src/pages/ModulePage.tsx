@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { BookOpen, Rocket, CircleCheck, CircleAlert } from 'lucide-react';
+import { BookOpen, Rocket, CircleCheck, CircleAlert, ChevronLeft, ChevronRight } from 'lucide-react';
 import ProgressBar from '../components/ProgressBar.js';
 import EmptyState from '../components/EmptyState.js';
 import ResourceCard from '../components/ResourceCard.js';
@@ -38,7 +38,7 @@ export default function ModulePage() {
     let cancelled = false;
     setLoadingProgress(true);
     api
-      .getModuleState(milestone.id, milestone.skill)
+      .getModuleState(milestone.id, milestone.skill, profile?.roleId ?? undefined)
       .then((p) => {
         if (!cancelled) setProgress(p);
       })
@@ -75,17 +75,17 @@ export default function ModulePage() {
   }
 
   async function refreshProgress() {
-    const p = await api.getModuleState(milestone!.id, milestone!.skill);
+    const p = await api.getModuleState(milestone!.id, milestone!.skill, profile?.roleId ?? undefined);
     setProgress(p);
   }
 
   async function handleStartLearning() {
-    const p = await api.startModuleLearning(milestone!.id, milestone!.skill);
+    const p = await api.startModuleLearning(milestone!.id, milestone!.skill, profile?.roleId ?? undefined);
     setProgress(p);
   }
 
   async function handleReadyForAssessment() {
-    const p = await api.markReadyForAssessment(milestone!.id, milestone!.skill);
+    const p = await api.markReadyForAssessment(milestone!.id, milestone!.skill, profile?.roleId ?? undefined);
     setProgress(p);
   }
 
@@ -96,10 +96,10 @@ export default function ModulePage() {
       sessionId: res.sessionId,
       type: res.type,
       totalQuestions: res.totalQuestions,
-      questionNumber: 1,
-      question: res.next?.question ?? null,
-      selected: null,
-      feedback: null,
+      history: res.next?.question
+        ? [{ question: res.next.question, selected: null, feedback: null }]
+        : [],
+      viewIndex: 0,
       completion: null,
     });
   }
@@ -244,14 +244,19 @@ export default function ModulePage() {
   );
 }
 
+interface QuizAnsweredEntry {
+  question: AssessmentQuestion;
+  selected: number | null;
+  feedback: SubmitAnswerResponseExtended | null;
+}
+
 interface QuizState {
   sessionId: string;
   type: string;
   totalQuestions: number;
-  questionNumber: number;
-  question: AssessmentQuestion | null;
-  selected: number | null;
-  feedback: SubmitAnswerResponseExtended | null;
+  /** Every question served this attempt, in order — the fixed plannedQuestions set never regenerates on Previous/Next. */
+  history: QuizAnsweredEntry[];
+  viewIndex: number;
   completion: SubmitAnswerResponseExtended['assessmentComplete'] | null;
 }
 
@@ -266,23 +271,34 @@ function ModuleQuiz({
   onQuizChange: (q: QuizState | null) => void;
   onDone: () => void;
 }) {
+  const current = quiz.history[quiz.viewIndex];
+
   async function handleSelect(optionIndex: number) {
-    if (!quiz.question || quiz.feedback) return;
-    onQuizChange({ ...quiz, selected: optionIndex });
-    const result = await api.submitAnswer(quiz.sessionId, quiz.question.id, optionIndex);
-    onQuizChange({ ...quiz, selected: optionIndex, feedback: result, completion: result.assessmentComplete ?? null });
+    if (!current || current.feedback) return;
+    const result = await api.submitAnswer(quiz.sessionId, current.question.id, optionIndex);
+    onQuizChange({
+      ...quiz,
+      history: quiz.history.map((entry, i) => (i === quiz.viewIndex ? { ...entry, selected: optionIndex, feedback: result } : entry)),
+      completion: result.assessmentComplete ?? null,
+    });
+  }
+
+  function handlePrevious() {
+    onQuizChange({ ...quiz, viewIndex: Math.max(0, quiz.viewIndex - 1) });
   }
 
   async function handleNext() {
     if (quiz.completion) return;
+    if (quiz.viewIndex < quiz.history.length - 1) {
+      onQuizChange({ ...quiz, viewIndex: quiz.viewIndex + 1 });
+      return;
+    }
     const next = await api.nextQuestion(quiz.sessionId);
     if (next.done || !next.question) return;
     onQuizChange({
       ...quiz,
-      questionNumber: quiz.questionNumber + 1,
-      question: next.question,
-      selected: null,
-      feedback: null,
+      history: [...quiz.history, { question: next.question, selected: null, feedback: null }],
+      viewIndex: quiz.viewIndex + 1,
     });
   }
 
@@ -321,10 +337,10 @@ function ModuleQuiz({
     );
   }
 
-  if (!quiz.question) return <p className="text-ink-secondary">Loading question...</p>;
+  if (!current) return <p className="text-ink-secondary">Loading question...</p>;
 
-  const question = quiz.question;
-  const feedback = quiz.feedback;
+  const { question, selected, feedback } = current;
+  const isReviewingPast = quiz.viewIndex < quiz.history.length - 1;
 
   return (
     <div>
@@ -332,10 +348,10 @@ function ModuleQuiz({
         <div className="flex items-center justify-between text-sm text-ink-secondary mb-2">
           <span>{skill} Assessment</span>
           <span>
-            Question {quiz.questionNumber} / {quiz.totalQuestions}
+            Question {quiz.viewIndex + 1} / {quiz.totalQuestions}
           </span>
         </div>
-        <ProgressBar value={(quiz.questionNumber / Math.max(1, quiz.totalQuestions)) * 100} />
+        <ProgressBar value={((quiz.viewIndex + 1) / Math.max(1, quiz.totalQuestions)) * 100} />
       </div>
 
       <div className="p-6 rounded-2xl bg-white border border-line shadow-sm">
@@ -344,13 +360,16 @@ function ModuleQuiz({
           <span className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize ${DIFFICULTY_COLORS[question.difficulty]}`}>
             {question.difficulty}
           </span>
+          {isReviewingPast && (
+            <span className="px-2.5 py-1 rounded-md bg-surface-secondary text-ink-muted text-xs font-medium">Reviewing</span>
+          )}
         </div>
 
         <h2 className="text-lg font-semibold text-ink mb-5">{question.question}</h2>
 
         <div className="flex flex-col gap-3">
           {question.options.map((opt, idx) => {
-            const isSelected = quiz.selected === idx;
+            const isSelected = selected === idx;
             const isCorrectOption = feedback && idx === feedback.correctAnswer;
             const isWrongSelected = feedback && isSelected && !feedback.correct;
 
@@ -385,14 +404,29 @@ function ModuleQuiz({
           </div>
         )}
 
-        {feedback && (
+        <div className="mt-5 flex items-center gap-3">
           <button
-            onClick={handleNext}
-            className="mt-5 px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold transition-colors"
+            onClick={handlePrevious}
+            disabled={quiz.viewIndex === 0}
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg border border-line text-ink-secondary hover:bg-surface-secondary disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-colors"
           >
-            Next
+            <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" /> Previous
           </button>
-        )}
+          {feedback && (
+            <button
+              onClick={handleNext}
+              className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold transition-colors"
+            >
+              {isReviewingPast ? (
+                <>
+                  Next <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
+                </>
+              ) : (
+                'Next'
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

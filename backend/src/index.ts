@@ -12,6 +12,10 @@ import { moduleRouter } from './routes/module.js';
 import { authRouter } from './routes/auth.js';
 import { devRouter } from './routes/dev.js';
 import { seedDemoAccount } from './services/demoSeed.js';
+import { connectToDatabase } from './db/mongoose.js';
+import { loadUsersFromDb } from './store/userStore.js';
+import { loadSessionsFromDb } from './store/sessionStore.js';
+import { loadLearnersFromDb } from './store/learnerStore.js';
 
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4100;
@@ -45,8 +49,17 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ error: 'Internal server error' });
 });
 
-seedDemoAccount();
+async function start(): Promise<void> {
+  await connectToDatabase();
+  await Promise.all([loadUsersFromDb(), loadSessionsFromDb(), loadLearnersFromDb()]);
+  await seedDemoAccount();
 
-app.listen(PORT, () => {
-  console.log(`Backend listening on http://localhost:${PORT}`);
+  app.listen(PORT, () => {
+    console.log(`Backend listening on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start backend:', err);
+  process.exit(1);
 });

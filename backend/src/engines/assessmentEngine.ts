@@ -220,7 +220,7 @@ export function submitAnswer(sessionId: string, questionId: string, selectedOpti
   if (allFinished) session.completed = true;
 
   if (session.learnerId) {
-    recordSeenQuestions(session.learnerId, [questionId]);
+    recordSeenQuestions(session.learnerId, session.roleId, [questionId]);
   }
 
   return {
