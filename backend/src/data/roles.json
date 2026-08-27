@@ -1,0 +1,80 @@
+[
+  {
+    "id": "ml-engineer",
+    "title": "Machine Learning Engineer",
+    "description": "Builds, trains, evaluates, and deploys machine learning models into production systems.",
+    "skills": [
+      { "skill": "Python", "targetMastery": 85, "prerequisites": [] },
+      { "skill": "NumPy", "targetMastery": 75, "prerequisites": ["Python"] },
+      { "skill": "Pandas", "targetMastery": 75, "prerequisites": ["Python"] },
+      { "skill": "Mathematics", "targetMastery": 70, "prerequisites": [] },
+      { "skill": "Statistics", "targetMastery": 80, "prerequisites": ["Mathematics"] },
+      { "skill": "SQL", "targetMastery": 65, "prerequisites": [] },
+      { "skill": "Machine Learning", "targetMastery": 85, "prerequisites": ["Python", "Statistics", "NumPy", "Pandas"] },
+      { "skill": "Model Evaluation", "targetMastery": 75, "prerequisites": ["Machine Learning"] },
+      { "skill": "Deep Learning", "targetMastery": 75, "prerequisites": ["Machine Learning"] },
+      { "skill": "MLOps", "targetMastery": 70, "prerequisites": ["Machine Learning", "Model Evaluation"] }
+    ]
+  },
+  {
+    "id": "data-scientist",
+    "title": "Data Scientist",
+    "description": "Analyzes complex data to extract insights and build predictive models to guide business decisions.",
+    "skills": [
+      { "skill": "Python", "targetMastery": 80, "prerequisites": [] },
+      { "skill": "SQL", "targetMastery": 80, "prerequisites": [] },
+      { "skill": "Statistics", "targetMastery": 85, "prerequisites": ["Mathematics"] },
+      { "skill": "Mathematics", "targetMastery": 70, "prerequisites": [] },
+      { "skill": "Pandas", "targetMastery": 80, "prerequisites": ["Python"] },
+      { "skill": "Data Visualization", "targetMastery": 75, "prerequisites": ["Pandas"] },
+      { "skill": "Machine Learning", "targetMastery": 70, "prerequisites": ["Python", "Statistics"] },
+      { "skill": "Model Evaluation", "targetMastery": 65, "prerequisites": ["Machine Learning"] },
+      { "skill": "Communication", "targetMastery": 60, "prerequisites": [] }
+    ]
+  },
+  {
+    "id": "fullstack-developer",
+    "title": "Full Stack Developer",
+    "description": "Builds and maintains both client-facing and server-side parts of web applications.",
+    "skills": [
+      { "skill": "JavaScript", "targetMastery": 85, "prerequisites": [] },
+      { "skill": "HTML/CSS", "targetMastery": 75, "prerequisites": [] },
+      { "skill": "React", "targetMastery": 80, "prerequisites": ["JavaScript", "HTML/CSS"] },
+      { "skill": "Node.js", "targetMastery": 80, "prerequisites": ["JavaScript"] },
+      { "skill": "SQL", "targetMastery": 65, "prerequisites": [] },
+      { "skill": "REST APIs", "targetMastery": 75, "prerequisites": ["Node.js"] },
+      { "skill": "Databases", "targetMastery": 70, "prerequisites": ["SQL"] },
+      { "skill": "Git", "targetMastery": 70, "prerequisites": [] },
+      { "skill": "System Design", "targetMastery": 60, "prerequisites": ["REST APIs", "Databases"] }
+    ]
+  },
+  {
+    "id": "cloud-engineer",
+    "title": "Cloud Engineer",
+    "description": "Designs, deploys, and manages scalable cloud infrastructure and services.",
+    "skills": [
+      { "skill": "Linux", "targetMastery": 80, "prerequisites": [] },
+      { "skill": "Networking", "targetMastery": 75, "prerequisites": [] },
+      { "skill": "Cloud Platforms", "targetMastery": 85, "prerequisites": ["Linux", "Networking"] },
+      { "skill": "Containers", "targetMastery": 80, "prerequisites": ["Linux"] },
+      { "skill": "Infrastructure as Code", "targetMastery": 75, "prerequisites": ["Cloud Platforms"] },
+      { "skill": "CI/CD", "targetMastery": 70, "prerequisites": ["Containers"] },
+      { "skill": "Security", "targetMastery": 70, "prerequisites": ["Networking", "Cloud Platforms"] },
+      { "skill": "Scripting", "targetMastery": 65, "prerequisites": ["Linux"] }
+    ]
+  },
+  {
+    "id": "data-analyst",
+    "title": "Data Analyst",
+    "description": "Collects, cleans, and interprets data sets to answer business questions and inform decisions.",
+    "skills": [
+      { "skill": "SQL", "targetMastery": 85, "prerequisites": [] },
+      { "skill": "Excel", "targetMastery": 75, "prerequisites": [] },
+      { "skill": "Statistics", "targetMastery": 65, "prerequisites": ["Mathematics"] },
+      { "skill": "Mathematics", "targetMastery": 55, "prerequisites": [] },
+      { "skill": "Data Visualization", "targetMastery": 80, "prerequisites": [] },
+      { "skill": "Python", "targetMastery": 60, "prerequisites": [] },
+      { "skill": "Communication", "targetMastery": 70, "prerequisites": [] }
+    ]
+  }
+]
