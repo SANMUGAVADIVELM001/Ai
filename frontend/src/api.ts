@@ -21,7 +21,11 @@ import type {
   SubmitAnswerResponseExtended,
 } from './types.js';
 
-const BASE = '/api';
+// In production (Vercel), the frontend and backend (Render) are on separate
+// origins, so the API base must be an absolute URL pointing at the deployed
+// backend — set via VITE_API_URL at build time. Locally it falls back to the
+// relative '/api' path, which the Vite dev server proxies to localhost:4100.
+const BASE = `${import.meta.env.VITE_API_URL ?? ''}/api`;
 
 // The authenticated user's id (returned by the backend on login/signup) IS
 // the learnerId that the mastery/assessment persistence layer keys

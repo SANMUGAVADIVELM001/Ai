@@ -20,10 +20,35 @@ import { loadLearnersFromDb } from './store/learnerStore.js';
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4100;
 
-// credentials:true + reflected origin is required for the HTTP-only session
-// cookie to be sent/received across the frontend (5180) <-> backend (4100)
-// origin split during local dev.
-app.use(cors({ origin: true, credentials: true }));
+// Render (and most PaaS hosts) terminate TLS at a proxy in front of the app
+// and forward plain HTTP — without this, Express can't tell the original
+// request was HTTPS, which breaks Secure cookie handling in production.
+app.set('trust proxy', 1);
+
+// Allowed frontend origins for CORS. In production this must be set to the
+// deployed frontend's origin(s) (e.g. Vercel) — comma-separated if there's
+// more than one (preview + production). Falls back to the local Vite dev
+// server origin when unset.
+const ALLOWED_ORIGINS = (process.env.FRONTEND_ORIGIN ?? 'http://localhost:5180')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+// credentials:true is required for the HTTP-only session cookie to be
+// sent/received across the frontend <-> backend origin split (local dev,
+// and Vercel <-> Render in production).
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(cookieParser());
 

@@ -19,11 +19,17 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 function setSessionCookie(res: import('express').Response, token: string): void {
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // Frontend (Vercel) and backend (Render) are on different sites in
+    // production, so the cookie must be SameSite=None to be sent
+    // cross-site — which in turn requires Secure. Locally both run on
+    // localhost, so Lax (and no Secure, since dev is plain HTTP) is used.
+    sameSite: IS_PRODUCTION ? 'none' : 'lax',
+    secure: IS_PRODUCTION,
     maxAge: COOKIE_MAX_AGE_MS,
     path: '/',
   });
@@ -94,6 +100,6 @@ authRouter.get('/me', requireAuth, (req, res) => {
 authRouter.post('/logout', (req, res) => {
   const token = req.cookies?.[SESSION_COOKIE_NAME];
   if (typeof token === 'string') destroyAuthSession(token);
-  res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+  res.clearCookie(SESSION_COOKIE_NAME, { path: '/', sameSite: IS_PRODUCTION ? 'none' : 'lax', secure: IS_PRODUCTION });
   res.json({ loggedOut: true });
 });
