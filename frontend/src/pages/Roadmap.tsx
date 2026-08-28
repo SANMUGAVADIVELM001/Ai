@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Map as MapIcon,
   Rocket,
@@ -18,8 +18,8 @@ import EmptyState from '../components/EmptyState.js';
 import ResourceCard from '../components/ResourceCard.js';
 import { api } from '../api.js';
 import { useLearner } from '../context/LearnerContext.js';
-import { useEnsureRoadmap } from '../hooks/useEnsureData.js';
-import type { LearnerProfile, MilestoneStatus, ModuleProgressRecord, RoadmapMilestone } from '../types.js';
+import { useEnsureRoadmap, useEnsureLearnerState } from '../hooks/useEnsureData.js';
+import type { LearnerProfile, MilestoneStatus, RoadmapMilestone } from '../types.js';
 
 const STATUS_STYLES: Record<MilestoneStatus, { label: string; icon: LucideIcon; badge: string; card: string }> = {
   locked: { label: 'Locked', icon: Lock, badge: 'text-locked bg-surface-secondary border-line', card: 'opacity-60' },
@@ -35,8 +35,9 @@ const PRIORITY_BADGE: Record<string, string> = {
 };
 
 export default function Roadmap() {
-  const { profile, sessionId, effectiveStatus } = useLearner();
+  const { profile, sessionId } = useLearner();
   const { roadmap, loading, needsAnalysis } = useEnsureRoadmap();
+  const { nextBestAction } = useEnsureLearnerState();
   const [searchParams] = useSearchParams();
   const [expandedId, setExpandedId] = useState<string | null>(searchParams.get('milestone'));
 
@@ -66,21 +67,26 @@ export default function Roadmap() {
 
   if (!roadmap) return <p className="text-ink-secondary">Generating your personalized roadmap...</p>;
 
-  const milestonesWithStatus = roadmap.milestones.map((m) => ({
-    ...m,
-    status: effectiveStatus(m.id, m.status),
-  }));
-
-  const nextAction = milestonesWithStatus.find((m) => m.status === 'in_progress') ?? milestonesWithStatus.find((m) => m.status === 'available');
-
   return (
     <div>
       <h1 className="text-2xl font-bold text-ink mb-1">Learning Roadmap</h1>
       <p className="text-ink-secondary mb-8">
         Target: <span className="text-ink">{roadmap.roleTitle}</span>
         {roadmap.targetDuration && <span> · Goal timeline: {roadmap.targetDuration}</span>}
-        {' · '}Estimated: {roadmap.totalEstimatedWeeks} weeks at {roadmap.studyTimePerDayHours}h/day
+        {' · '}Estimated: {roadmap.totalEstimatedDays} day{roadmap.totalEstimatedDays === 1 ? '' : 's'} at {roadmap.studyTimePerDayHours}h/day
       </p>
+
+      {roadmap.pacing === null && (
+        <div className="p-4 rounded-xl bg-warning-bg border border-warning mb-6 flex items-center justify-between flex-wrap gap-3">
+          <p className="text-ink-secondary text-sm">Set your available days to get an accurate, personalized timeline.</p>
+          <Link
+            to="/assessment?step=pacing"
+            className="px-4 py-2 rounded-lg bg-white hover:bg-surface-secondary border border-line text-ink-secondary text-sm font-medium transition-colors shrink-0"
+          >
+            Set your pace
+          </Link>
+        </div>
+      )}
 
       {/* Overall progress */}
       <div className="p-5 rounded-xl bg-white border border-line shadow-sm mb-6">
@@ -103,28 +109,19 @@ export default function Roadmap() {
       </div>
 
       {/* Next best action */}
-      {nextAction && (
+      {nextBestAction && (
         <div className="p-5 rounded-xl bg-brand-50 border border-brand-200 mb-8">
           <p className="text-brand-600 text-xs font-semibold mb-2 tracking-wide">YOUR NEXT BEST ACTION</p>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <p className="text-ink font-semibold flex items-center gap-1.5">
-                {(() => {
-                  const NextIcon = STATUS_STYLES[nextAction.status].icon;
-                  return <NextIcon size={16} strokeWidth={1.75} aria-hidden="true" />;
-                })()}
-                {nextAction.skill}
-              </p>
-              <p className="text-ink-secondary text-sm mt-1">
-                {nextAction.estimatedWeeks > 0 ? `~${nextAction.estimatedWeeks} weeks` : 'Quick review'} ·{' '}
-                <span className="capitalize">{nextAction.priority} priority</span>
-              </p>
+              <p className="text-ink font-semibold">{nextBestAction.label}</p>
+              <p className="text-ink-secondary text-sm mt-1">{nextBestAction.description}</p>
             </div>
             <button
-              onClick={() => setExpandedId(nextAction.id)}
+              onClick={() => nextBestAction.moduleId && setExpandedId(nextBestAction.moduleId)}
               className="px-5 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-colors"
             >
-              Continue Learning →
+              {nextBestAction.ctaLabel} →
             </button>
           </div>
         </div>
@@ -132,7 +129,7 @@ export default function Roadmap() {
 
       {/* Milestone timeline */}
       <div className="flex flex-col gap-4">
-        {milestonesWithStatus.map((milestone, idx) => (
+        {roadmap.milestones.map((milestone, idx) => (
           <MilestoneCard
             key={milestone.id}
             milestone={milestone}
@@ -202,7 +199,7 @@ function MilestoneCard({
             </div>
             <p className="text-ink-muted text-xs mt-1 truncate">
               {milestone.currentMastery}% → {milestone.targetMastery}% required
-              {milestone.estimatedWeeks > 0 && ` · ~${milestone.estimatedWeeks} weeks`}
+              {milestone.estimatedHours > 0 && ` · ~${milestone.estimatedHours}h`}
             </p>
           </div>
         </div>

@@ -60,7 +60,7 @@ function deterministicRecommendationExplanation(milestone: RoadmapMilestone, res
 function deterministicRoadmapExplanation(roadmap: Roadmap): string {
   const first = roadmap.milestones.find((m) => m.status !== 'locked' && !m.isVerifiedSufficient);
   const skipped = roadmap.milestones.filter((m) => m.isVerifiedSufficient).map((m) => m.skill);
-  const parts = [`Your roadmap for ${roadmap.roleTitle} has ${roadmap.milestones.length} milestones, estimated at ${roadmap.totalEstimatedWeeks} weeks total.`];
+  const parts = [`Your roadmap for ${roadmap.roleTitle} has ${roadmap.milestones.length} milestones, estimated at ${roadmap.totalEstimatedDays} days total (${roadmap.totalEstimatedHours}h at ${roadmap.studyTimePerDayHours}h/day).`];
   if (first) parts.push(`It starts with ${first.skill}, which your assessment identified as a priority gap.`);
   if (skipped.length > 0) parts.push(`${skipped.join(', ')} ${skipped.length === 1 ? 'is' : 'are'} already sufficient, so those milestones are shortened to a quick review.`);
   return parts.join(' ');

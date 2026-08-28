@@ -13,7 +13,7 @@ export function buildCoachSystemPrompt(context: LearnerContext): string {
   const upcomingLines =
     context.upcomingMilestones.length > 0
       ? context.upcomingMilestones
-          .map((m) => `- ${m.skill} (${m.status}, ~${m.estimatedWeeks} weeks)${m.lockedReason ? ` — ${m.lockedReason}` : ''}`)
+          .map((m) => `- ${m.skill} (${m.status}, ~${m.estimatedHours}h)${m.lockedReason ? ` — ${m.lockedReason}` : ''}`)
           .join('\n')
       : '- none';
 

@@ -214,7 +214,7 @@ export interface RoadmapMilestone {
   currentMastery: number;
   targetMastery: number;
   gap: number;
-  estimatedWeeks: number;
+  estimatedHours: number;
   order: number;
   prerequisiteStatus: PrerequisiteStatus;
   unsatisfiedPrerequisites: string[];
@@ -232,16 +232,45 @@ export interface ProjectRecommendation {
   appliesSkills: string[];
 }
 
+export type PacingChoice = 'recommended' | 'accelerated' | 'as_requested';
+
+export interface LearnerPacing {
+  availableDays: number;
+  studyHoursPerDay: number;
+  chosenPlan: PacingChoice;
+  confirmedAt: number;
+}
+
 export interface Roadmap {
   roleId: string;
   roleTitle: string;
   generatedAt: number;
-  totalEstimatedWeeks: number;
+  totalEstimatedHours: number;
+  totalEstimatedDays: number;
   studyTimePerDayHours: number;
   targetDuration: string | null;
+  pacing: LearnerPacing | null;
   milestones: RoadmapMilestone[];
   progress: { completed: number; total: number; percentComplete: number };
 }
+
+export interface PlanOptionFeasible {
+  feasible: true;
+  studyHoursPerDay: number;
+  totalHoursNeeded: number;
+  availableDays: number;
+}
+
+export interface PlanOptionInfeasible {
+  feasible: false;
+  requestedDays: number;
+  recommended: { days: number; hoursPerDay: number };
+  accelerated: { days: number; hoursPerDay: number };
+  totalHoursNeeded: number;
+  reason: string;
+}
+
+export type PlanOptionsResult = PlanOptionFeasible | PlanOptionInfeasible;
 
 // ---- AI / NLP layer ----
 
@@ -274,7 +303,7 @@ export interface LearnerContextSkill {
 export interface LearnerContextMilestone {
   skill: string;
   status: MilestoneStatus;
-  estimatedWeeks: number;
+  estimatedHours: number;
   lockedReason: string | null;
 }
 
@@ -400,6 +429,8 @@ export interface GoalState {
   seenQuestionIds: string[]; // rolling window, most-recent-last
   assessments: AssessmentRecord[];
   moduleProgress: Record<string, ModuleProgressRecord>;
+  /** The learner's confirmed study-pacing choice, or null until they've gone through the pacing step. */
+  pacing: LearnerPacing | null;
 }
 
 export interface LearnerRecord {

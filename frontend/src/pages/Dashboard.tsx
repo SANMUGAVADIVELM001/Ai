@@ -19,12 +19,12 @@ const MASTERY_COLORS: Record<string, string> = {
  * Analytics/reporting view — "how am I doing overall" — distinct from Home
  * ("what do I do right now"). Everything here is derived only from real data
  * already in context or fetched from persisted server state (analysis,
- * roadmap, assessment history, milestoneOverrides) — nothing here is
- * fabricated, and metrics we don't actually track (study streak, hours this
- * week) are intentionally omitted rather than invented.
+ * roadmap, assessment history) — nothing here is fabricated, and metrics we
+ * don't actually track (study streak, hours this week) are intentionally
+ * omitted rather than invented.
  */
 export default function Dashboard() {
-  const { profile, milestoneOverrides, effectiveStatus } = useLearner();
+  const { profile } = useLearner();
   const { analysis } = useEnsureAnalysis();
   const { roadmap, loading, needsAnalysis } = useEnsureRoadmap();
   const { nextBestAction } = useEnsureLearnerState();
@@ -55,25 +55,22 @@ export default function Dashboard() {
     );
   }
 
-  const withStatus = roadmap.milestones.map((m) => ({ ...m, status: effectiveStatus(m.id, m.status) }));
-  const currentMilestone = withStatus.find((m) => m.status === 'in_progress') ?? withStatus.find((m) => m.status === 'available');
+  const currentMilestone = roadmap.milestones.find((m) => m.id === nextBestAction?.moduleId) ?? null;
 
   const skillsMastered = analysis ? analysis.skillResults.filter((s) => s.masteryLabel === 'Advanced').length : 0;
   const totalSkillsTracked = analysis?.skillResults.length ?? roadmap.progress.total;
 
-  const activity = Object.entries(milestoneOverrides)
-    .filter(([, o]) => o.updatedAt > 0)
-    .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
-    .slice(0, 5)
-    .map(([milestoneId, o]) => {
-      const milestone = roadmap.milestones.find((m) => m.id === milestoneId);
-      return { skill: milestone?.skill ?? milestoneId, status: o.status, updatedAt: o.updatedAt };
-    });
+  const activity = recentAssessments.slice(0, 5).map((a) => {
+    const score = a.skill ? a.scoreBySkill[a.skill]?.masteryScore ?? 0 : 0;
+    const milestone = roadmap.milestones.find((m) => m.skill === a.skill);
+    const passed = milestone ? score >= milestone.targetMastery : score >= 70;
+    return { skill: a.skill ?? 'Diagnostic', passed, at: a.completedAt ?? a.createdAt };
+  });
 
   const achievements: string[] = [];
   achievements.push('Diagnostic completed');
   if (roadmap.progress.completed > 0) achievements.push(`${roadmap.progress.completed} skill(s) already sufficient`);
-  const firstCompleted = withStatus.find((m) => m.status === 'completed' && !m.isVerifiedSufficient);
+  const firstCompleted = roadmap.milestones.find((m) => m.status === 'completed' && !m.isVerifiedSufficient);
   if (firstCompleted) achievements.push(`Completed milestone: ${firstCompleted.skill}`);
 
   return (
@@ -105,7 +102,7 @@ export default function Dashboard() {
         <StatCard label="Overall Progress" value={`${roadmap.progress.percentComplete}%`} />
         <StatCard label="Skills Mastered" value={`${skillsMastered} / ${totalSkillsTracked}`} />
         <StatCard label="High-Priority Gaps" value={String(analysis?.highPriorityGaps.length ?? 0)} />
-        <StatCard label="Weeks Remaining" value={String(roadmap.totalEstimatedWeeks)} />
+        <StatCard label="Days Remaining" value={String(roadmap.totalEstimatedDays)} />
       </div>
 
       <div className="p-5 rounded-xl bg-white border border-line shadow-sm mb-6">
@@ -115,7 +112,7 @@ export default function Dashboard() {
         </div>
         <ProgressBar value={roadmap.progress.percentComplete} colorClass="bg-success" />
         <p className="text-ink-muted text-xs mt-2">
-          {roadmap.progress.completed} / {roadmap.progress.total} skills verified · Est. {roadmap.totalEstimatedWeeks} weeks remaining
+          {roadmap.progress.completed} / {roadmap.progress.total} skills verified · Est. {roadmap.totalEstimatedDays} day{roadmap.totalEstimatedDays === 1 ? '' : 's'} remaining
         </p>
       </div>
 
@@ -140,7 +137,7 @@ export default function Dashboard() {
       <section className="mb-8">
         <h2 className="text-ink font-semibold mb-4">Roadmap Timeline</h2>
         <div className="flex flex-col gap-2">
-          {withStatus.slice(0, 6).map((m) => (
+          {roadmap.milestones.slice(0, 6).map((m) => (
             <div key={m.id} className="flex items-center gap-3 p-3 rounded-lg bg-white border border-line shadow-sm">
               <span className="text-ink-secondary text-sm flex-1 truncate">{m.skill}</span>
               <div className="w-32 shrink-0">
@@ -189,7 +186,7 @@ export default function Dashboard() {
               {activity.map((a, i) => (
                 <li key={i} className="p-3 rounded-lg bg-white border border-line shadow-sm text-sm">
                   <span className="text-ink">{a.skill}</span>{' '}
-                  <span className="text-ink-muted">marked {a.status === 'completed' ? 'complete' : 'in progress'}</span>
+                  <span className="text-ink-muted">{a.passed ? 'passed assessment' : 'needs review'}</span>
                 </li>
               ))}
             </ul>

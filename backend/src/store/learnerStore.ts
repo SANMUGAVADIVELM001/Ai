@@ -2,6 +2,7 @@ import type {
   AssessmentRecord,
   AssessmentType,
   GoalState,
+  LearnerPacing,
   LearnerRecord,
   ModuleProgressRecord,
   SkillMasteryRecord,
@@ -45,7 +46,17 @@ export async function loadLearnersFromDb(): Promise<void> {
   if (!isDatabaseConnected()) return;
   const docs = await LearnerRecordModel.find().lean();
   for (const doc of docs) {
-    const goals = doc.goals instanceof Map ? Object.fromEntries(doc.goals) : (doc.goals as Record<string, GoalState>);
+    const rawGoals = doc.goals instanceof Map ? Object.fromEntries(doc.goals) : (doc.goals as Record<string, GoalState>);
+    // Backward compat: Mongo documents written before pacing (or, for older
+    // documents, moduleProgress) existed have no such field on their
+    // GoalState — normalize so every consumer can treat these as "empty"
+    // rather than crashing on undefined.
+    const goals: Record<string, GoalState> = Object.fromEntries(
+      Object.entries(rawGoals).map(([roleId, g]) => {
+        const goal = g as GoalState;
+        return [roleId, { ...goal, pacing: goal.pacing ?? null, moduleProgress: goal.moduleProgress ?? {} }];
+      })
+    );
     learners.set(doc.learnerId, {
       learnerId: doc.learnerId,
       createdAt: doc.createdAt,
@@ -85,6 +96,7 @@ function blankGoalState(roleId: string): GoalState {
     seenQuestionIds: [],
     assessments: [],
     moduleProgress: {},
+    pacing: null,
   };
 }
 
@@ -173,13 +185,25 @@ export function getAssessmentHistory(
 }
 
 export function getModuleProgress(learnerId: string, roleId: string, moduleId: string): ModuleProgressRecord | undefined {
-  return getGoal(learnerId, roleId)?.moduleProgress[moduleId];
+  return getGoal(learnerId, roleId)?.moduleProgress?.[moduleId];
 }
 
 export function upsertModuleProgress(learnerId: string, roleId: string, record: ModuleProgressRecord): void {
   const goal = getOrCreateGoal(learnerId, roleId);
   goal.moduleProgress[record.moduleId] = record;
   persistLearner(getOrCreateLearner(learnerId));
+}
+
+/** Persists the learner's confirmed study-pacing choice for one goal. */
+export function setPacing(learnerId: string, roleId: string, pacing: LearnerPacing): void {
+  const goal = getOrCreateGoal(learnerId, roleId);
+  goal.pacing = pacing;
+  goal.lastActiveAt = Date.now();
+  persistLearner(getOrCreateLearner(learnerId));
+}
+
+export function getPacing(learnerId: string, roleId: string): LearnerPacing | null {
+  return getGoal(learnerId, roleId)?.pacing ?? null;
 }
 
 export function resetLearner(learnerId: string): void {

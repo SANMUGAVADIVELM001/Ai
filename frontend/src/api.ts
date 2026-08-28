@@ -9,6 +9,8 @@ import type {
   LearnerStateResponse,
   ModuleProgressRecord,
   NextQuestionResponse,
+  PacingChoice,
+  PlanOptionsResult,
   PublicUser,
   Resource,
   Roadmap,
@@ -75,6 +77,24 @@ export const api = {
     request<{ roadmap: Roadmap }>('/roadmap/generate', {
       method: 'POST',
       body: JSON.stringify({ sessionId: opts.sessionId, roleId: opts.roleId, profile }),
+    }),
+
+  getRoadmapPlanOptions: (roleId: string, availableDays: number) =>
+    request<PlanOptionsResult>('/roadmap/plan-options', {
+      method: 'POST',
+      body: JSON.stringify({ roleId, availableDays }),
+    }),
+
+  confirmPacing: (
+    profile: LearnerProfile,
+    roleId: string,
+    availableDays: number,
+    studyHoursPerDay: number,
+    chosenPlan: PacingChoice
+  ) =>
+    request<{ roadmap: Roadmap }>('/roadmap/confirm-pacing', {
+      method: 'POST',
+      body: JSON.stringify({ profile, roleId, availableDays, studyHoursPerDay, chosenPlan }),
     }),
 
   getResources: (skill?: string) =>

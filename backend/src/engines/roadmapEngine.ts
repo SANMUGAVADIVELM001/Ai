@@ -2,8 +2,11 @@ import projectsData from '../data/projects.json' with { type: 'json' };
 import { ROADMAP_CONFIG } from '../config.js';
 import { buildPrerequisiteGraph } from './prerequisiteEngine.js';
 import { recommendResourcesForSkill } from './recommendationEngine.js';
+import { computeBaselineHours, estimateModuleHours } from './moduleTimeEngine.js';
 import type {
+  LearnerPacing,
   LearnerProfile,
+  ModuleProgressRecord,
   ProjectRecommendation,
   Roadmap,
   RoadmapMilestone,
@@ -13,16 +16,10 @@ import type {
 
 const projects = projectsData as ProjectRecommendation[];
 
+const IN_PROGRESS_PHASES = new Set(['learning', 'assessment_ready', 'remedial']);
+
 function projectForSkill(skill: string): ProjectRecommendation | null {
   return projects.find((p) => p.skill === skill) ?? null;
-}
-
-function estimateWeeks(gap: SkillGap, studyTimePerDayHours: number): number {
-  if (gap.sufficient) return 0;
-  const estimatedHours = gap.gap / ROADMAP_CONFIG.masteryPointsPerHour;
-  const estimatedDays = estimatedHours / studyTimePerDayHours;
-  const estimatedWeeks = Math.ceil(estimatedDays / ROADMAP_CONFIG.daysPerWeekAssumed);
-  return Math.max(ROADMAP_CONFIG.minWeeksPerMilestone, estimatedWeeks);
 }
 
 function buildWhyRecommended(
@@ -43,33 +40,44 @@ function buildWhyRecommended(
   return `${gap.skill} requires stronger ${missing} first. It will unlock once ${unsatisfiedPrerequisites.length > 1 ? 'those reach' : 'that reaches'} their target mastery.`;
 }
 
-export function generateRoadmap(analysis: SkillAnalysisResult, profile: LearnerProfile): Roadmap {
+export function generateRoadmap(
+  analysis: SkillAnalysisResult,
+  profile: LearnerProfile,
+  pacing: LearnerPacing | null = null,
+  moduleProgressAll: Record<string, ModuleProgressRecord> = {}
+): Roadmap {
   const prereqGraph = buildPrerequisiteGraph(analysis);
   const gapBySkill = new Map(analysis.gaps.map((g) => [g.skill, g]));
-  const studyTimePerDayHours = profile.studyTimePerDay ?? ROADMAP_CONFIG.defaultStudyTimePerDayHours;
+  const studyTimePerDayHours = pacing?.studyHoursPerDay ?? profile.studyTimePerDay ?? ROADMAP_CONFIG.defaultStudyTimePerDayHours;
 
   const milestones: RoadmapMilestone[] = prereqGraph.nodes.map((node, idx) => {
     const gap = gapBySkill.get(node.skill);
     if (!gap) throw new Error(`No skill gap data for ${node.skill}`);
 
+    const milestoneId = `${analysis.roleId}-${node.skill.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    const phase = moduleProgressAll[milestoneId]?.phase;
+
     const isVerifiedSufficient = gap.sufficient;
-    const status: RoadmapMilestone['status'] = isVerifiedSufficient
-      ? 'completed'
-      : node.availability === 'available'
-        ? 'available'
-        : 'locked';
+    const status: RoadmapMilestone['status'] =
+      isVerifiedSufficient || phase === 'passed'
+        ? 'completed'
+        : phase && IN_PROGRESS_PHASES.has(phase)
+          ? 'in_progress'
+          : node.availability === 'available'
+            ? 'available'
+            : 'locked';
 
     const resources = recommendResourcesForSkill(node.skill, analysis, prereqGraph, profile);
 
     return {
-      id: `${analysis.roleId}-${node.skill.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      id: milestoneId,
       skill: node.skill,
       status,
       priority: gap.priority,
       currentMastery: gap.current,
       targetMastery: gap.required,
       gap: gap.gap,
-      estimatedWeeks: isVerifiedSufficient ? 0 : estimateWeeks(gap, studyTimePerDayHours),
+      estimatedHours: isVerifiedSufficient ? 0 : estimateModuleHours(gap, computeBaselineHours(node.skill)),
       order: idx,
       prerequisiteStatus: node.prerequisiteStatus,
       unsatisfiedPrerequisites: node.unsatisfiedPrerequisites,
@@ -80,16 +88,19 @@ export function generateRoadmap(analysis: SkillAnalysisResult, profile: LearnerP
     };
   });
 
-  const totalEstimatedWeeks = milestones.reduce((sum, m) => sum + m.estimatedWeeks, 0);
+  const totalEstimatedHours = Math.round(milestones.reduce((sum, m) => sum + m.estimatedHours, 0) * 10) / 10;
+  const totalEstimatedDays = totalEstimatedHours === 0 ? 0 : Math.ceil(totalEstimatedHours / studyTimePerDayHours);
   const completed = milestones.filter((m) => m.status === 'completed').length;
 
   return {
     roleId: analysis.roleId,
     roleTitle: analysis.roleTitle,
     generatedAt: Date.now(),
-    totalEstimatedWeeks,
+    totalEstimatedHours,
+    totalEstimatedDays,
     studyTimePerDayHours,
     targetDuration: profile.targetDuration,
+    pacing,
     milestones,
     progress: {
       completed,

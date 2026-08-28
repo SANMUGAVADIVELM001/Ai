@@ -1,23 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext.js';
 import { api } from '../api.js';
-import type { GoalSummary, LearnerProfile, MilestoneStatus, ModuleProgressRecord, NextBestAction, Roadmap, SkillAnalysisResult } from '../types.js';
+import type { GoalSummary, LearnerProfile, ModuleProgressRecord, NextBestAction, Roadmap, SkillAnalysisResult } from '../types.js';
 
-function milestoneOverridesKey(learnerId: string): string {
-  return `pathai:${learnerId}:milestoneOverrides`;
-}
 function profilesByGoalKey(learnerId: string): string {
   return `pathai:${learnerId}:profilesByGoal`;
 }
 function sessionKey(learnerId: string): string {
   return `pathai:${learnerId}:sessionId`;
-}
-
-type MilestoneOverrideStatus = 'in_progress' | 'completed';
-
-interface MilestoneOverride {
-  status: MilestoneOverrideStatus;
-  updatedAt: number;
 }
 
 function loadFromStorage<T>(key: string): T | null {
@@ -41,17 +31,6 @@ function saveToStorage(key: string, value: unknown): void {
   }
 }
 
-function loadOverrides(learnerId: string): Record<string, MilestoneOverride> {
-  const raw = loadFromStorage<Record<string, MilestoneOverrideStatus | MilestoneOverride>>(milestoneOverridesKey(learnerId));
-  if (!raw) return {};
-  // Migrate the old bare-string shape (pre-dashboard-IA) to the timestamped shape.
-  const migrated: Record<string, MilestoneOverride> = {};
-  for (const [id, value] of Object.entries(raw)) {
-    migrated[id] = typeof value === 'string' ? { status: value, updatedAt: 0 } : value;
-  }
-  return migrated;
-}
-
 interface LearnerContextValue {
   /** The authenticated user's id — LearnerProvider only ever mounts inside ProtectedRoute, so this is always available. */
   learnerId: string;
@@ -67,19 +46,13 @@ interface LearnerContextValue {
   setModuleProgress: (p: Record<string, ModuleProgressRecord>) => void;
   nextBestAction: NextBestAction | null;
   setNextBestAction: (a: NextBestAction | null) => void;
-  milestoneOverrides: Record<string, MilestoneOverride>;
-  setMilestoneInProgress: (milestoneId: string) => void;
-  markMilestoneCompleted: (milestoneId: string) => void;
-  effectiveStatus: (milestoneId: string, serverStatus: MilestoneStatus) => MilestoneStatus;
   /**
    * Resets goal/session/assessment/roadmap state (e.g. before retaking the
-   * diagnostic). Leaves milestone overrides AND learnerId untouched —
-   * persisted server-side mastery/module history for this learner is not
-   * wiped just because a new diagnostic goal was entered.
+   * diagnostic). Leaves learnerId untouched — persisted server-side
+   * mastery/module history for this learner is not wiped just because a new
+   * diagnostic goal was entered.
    */
   clearLearnerState: () => void;
-  /** Clears client-side milestone progress overrides only. */
-  resetMilestoneOverrides: () => void;
 
   // ---- Multi-goal support ----
   /** Every goal (role) this learner has ever started, each with independent server-side progress. */
@@ -117,14 +90,9 @@ export function LearnerProvider({ children }: { children: React.ReactNode }) {
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
   const [moduleProgress, setModuleProgress] = useState<Record<string, ModuleProgressRecord>>({});
   const [nextBestAction, setNextBestAction] = useState<NextBestAction | null>(null);
-  const [milestoneOverrides, setMilestoneOverrides] = useState<Record<string, MilestoneOverride>>(() => loadOverrides(learnerId));
 
   const [goals, setGoals] = useState<GoalSummary[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
-
-  useEffect(() => {
-    saveToStorage(milestoneOverridesKey(learnerId), milestoneOverrides);
-  }, [learnerId, milestoneOverrides]);
 
   const refreshGoals = useCallback(async () => {
     setGoalsLoading(true);
@@ -194,32 +162,12 @@ export function LearnerProvider({ children }: { children: React.ReactNode }) {
     await refreshGoals();
   }
 
-  function setMilestoneInProgress(milestoneId: string) {
-    setMilestoneOverrides((prev) => ({ ...prev, [milestoneId]: { status: 'in_progress', updatedAt: Date.now() } }));
-  }
-
-  function markMilestoneCompleted(milestoneId: string) {
-    setMilestoneOverrides((prev) => ({ ...prev, [milestoneId]: { status: 'completed', updatedAt: Date.now() } }));
-  }
-
-  function effectiveStatus(milestoneId: string, serverStatus: MilestoneStatus): MilestoneStatus {
-    const override = milestoneOverrides[milestoneId];
-    if (!override) return serverStatus;
-    // A server-locked milestone can't be overridden client-side (prerequisites still apply).
-    if (serverStatus === 'locked') return serverStatus;
-    return override.status;
-  }
-
   function clearLearnerState() {
     setProfileState(null);
     setSessionIdState(null);
     setAnalysis(null);
     setRoadmap(null);
     saveToStorage(sessionKey(learnerId), null);
-  }
-
-  function resetMilestoneOverrides() {
-    setMilestoneOverrides({});
   }
 
   return (
@@ -238,12 +186,7 @@ export function LearnerProvider({ children }: { children: React.ReactNode }) {
         setModuleProgress,
         nextBestAction,
         setNextBestAction,
-        milestoneOverrides,
-        setMilestoneInProgress,
-        markMilestoneCompleted,
-        effectiveStatus,
         clearLearnerState,
-        resetMilestoneOverrides,
         goals,
         goalsLoading,
         refreshGoals,

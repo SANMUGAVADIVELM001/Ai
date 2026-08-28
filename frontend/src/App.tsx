@@ -1,10 +1,11 @@
 import { Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext.js';
+import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { LearnerProvider } from './context/LearnerContext.js';
 import ProtectedRoute from './components/ProtectedRoute.js';
 import AppShell from './components/AppShell.js';
 import Login from './pages/Login.js';
 import Signup from './pages/Signup.js';
+import Landing from './pages/Landing.js';
 import Home from './pages/Home.js';
 import MyGoals from './pages/MyGoals.js';
 import Assessment from './pages/Assessment.js';
@@ -45,10 +46,40 @@ function AuthenticatedApp() {
   );
 }
 
+/**
+ * The root path branches on auth state instead of being folded into
+ * AuthenticatedApp's route table: an anonymous visitor sees the public
+ * marketing page, an authenticated learner sees exactly what "/" has always
+ * rendered (Home, inside the normal app shell). Every other authenticated
+ * route (/goals, /assessment, /roadmap, ...) is untouched by this.
+ */
+function RootRoute() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <p className="text-ink-muted text-sm">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) return <Landing />;
+
+  return (
+    <LearnerProvider>
+      <AppShell>
+        <Home />
+      </AppShell>
+    </LearnerProvider>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        <Route path="/" element={<RootRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/*" element={<AuthenticatedApp />} />
