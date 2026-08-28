@@ -9,8 +9,8 @@ import { buildLearnerContext } from '../engines/contextEngine.js';
 import { aiService } from '../services/aiService.js';
 import { isAiConfigured, AI_CONFIG } from '../config.js';
 import { attachUser, requireAuth } from '../middleware/auth.js';
-import { getAssessmentHistory, getGoal } from '../store/learnerStore.js';
-import type { CoachMessage, LearnerProfile, SkillAnalysisResult } from '../types/index.js';
+import { getAssessmentHistory, getGoal, getPacing } from '../store/learnerStore.js';
+import type { CoachMessage, LearnerPacing, LearnerProfile, ModuleProgressRecord, SkillAnalysisResult } from '../types/index.js';
 
 export const aiRouter = Router();
 
@@ -48,6 +48,16 @@ function resolveAnalysis(req: { learnerId?: string }, sessionId: unknown, roleId
   return null;
 }
 
+function resolvePacingAndProgress(
+  req: { learnerId?: string },
+  roleId: unknown
+): { pacing: LearnerPacing | null; moduleProgressAll: Record<string, ModuleProgressRecord> } {
+  if (req.learnerId && typeof roleId === 'string') {
+    return { pacing: getPacing(req.learnerId, roleId), moduleProgressAll: getGoal(req.learnerId, roleId)?.moduleProgress ?? {} };
+  }
+  return { pacing: null, moduleProgressAll: {} };
+}
+
 aiRouter.get('/status', (_req, res) => {
   res.json({ configured: isAiConfigured(), provider: AI_CONFIG.provider, model: isAiConfigured() ? AI_CONFIG.model : null });
 });
@@ -83,7 +93,8 @@ aiRouter.post('/recommendation-explanation', async (req, res) => {
 
   try {
     const prereqGraph = buildPrerequisiteGraph(analysis);
-    const roadmap = generateRoadmap(analysis, profile);
+    const { pacing, moduleProgressAll } = resolvePacingAndProgress(req, roleId);
+    const roadmap = generateRoadmap(analysis, profile, pacing, moduleProgressAll);
     const milestone = roadmap.milestones.find((m) => m.skill === skill);
     if (!milestone) {
       res.status(404).json({ error: `No milestone for skill ${skill}` });
@@ -118,7 +129,8 @@ aiRouter.post('/roadmap-explanation', async (req, res) => {
   }
 
   try {
-    const roadmap = generateRoadmap(analysis, profile);
+    const { pacing, moduleProgressAll } = resolvePacingAndProgress(req, roleId);
+    const roadmap = generateRoadmap(analysis, profile, pacing, moduleProgressAll);
     const result = await aiService.explainRoadmap(roadmap);
     res.json(result);
   } catch (err) {
@@ -145,9 +157,9 @@ aiRouter.post('/coach', async (req, res) => {
   const chatHistory = isValidHistory(history) ? history.slice(-8) : [];
 
   try {
-    const roadmap = generateRoadmap(analysis, profile);
+    const { pacing, moduleProgressAll: moduleProgress } = resolvePacingAndProgress(req, roleId);
+    const roadmap = generateRoadmap(analysis, profile, pacing, moduleProgress);
     const assessmentHistory = req.learnerId ? getAssessmentHistory(req.learnerId, analysis.roleId) : [];
-    const moduleProgress = req.learnerId ? getGoal(req.learnerId, analysis.roleId)?.moduleProgress ?? {} : {};
     const context = buildLearnerContext(profile, analysis, roadmap, assessmentHistory, moduleProgress);
     const result = await aiService.chatWithLearner(context, chatHistory, message.trim());
     res.json(result);

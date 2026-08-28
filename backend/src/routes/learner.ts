@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { attachUser, requireAuth } from '../middleware/auth.js';
-import { getLearner, getAssessmentHistory, setActiveGoal, listGoals, resetGoal } from '../store/learnerStore.js';
+import { getLearner, getAssessmentHistory, setActiveGoal, listGoals, resetGoal, getPacing } from '../store/learnerStore.js';
 import { getLearnerMasteryForRole } from '../engines/masteryEngine.js';
 import { generateRoadmap } from '../engines/roadmapEngine.js';
 import { toSkillAnalysisResult } from '../engines/masteryEngine.js';
@@ -44,7 +44,8 @@ learnerRouter.post('/me', (req, res) => {
   if (isValidProfile(profile)) {
     try {
       const analysis = toSkillAnalysisResult(learnerId, roleId);
-      const roadmap = generateRoadmap(analysis, profile);
+      const pacing = getPacing(learnerId, roleId);
+      const roadmap = generateRoadmap(analysis, profile, pacing, goal?.moduleProgress ?? {});
       nextBestAction = computeNextBestAction(learnerId, roleId, roadmap, goal?.moduleProgress ?? {});
     } catch {
       nextBestAction = null;

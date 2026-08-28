@@ -100,7 +100,7 @@ export default function Home() {
               <StatCard label="Overall Progress" value={`${roadmap.progress.percentComplete}%`} />
               <StatCard label="Skills Mastered" value={`${roadmap.progress.completed} / ${roadmap.progress.total}`} />
               <StatCard label="High-Priority Gaps" value={String(analysis.highPriorityGaps.length)} />
-              <StatCard label="Est. Weeks Left" value={String(roadmap.totalEstimatedWeeks)} />
+              <StatCard label="Est. Days Left" value={String(roadmap.totalEstimatedDays)} />
             </div>
           )}
 

@@ -46,13 +46,13 @@ export function buildLearnerContext(
   if (roadmap) {
     const active = roadmap.milestones.find((m) => m.status === 'in_progress') ?? roadmap.milestones.find((m) => m.status === 'available');
     if (active) {
-      currentMilestone = { skill: active.skill, status: active.status, estimatedWeeks: active.estimatedWeeks, lockedReason: lockedReasonFor(active) };
+      currentMilestone = { skill: active.skill, status: active.status, estimatedHours: active.estimatedHours, lockedReason: lockedReasonFor(active) };
     }
     upcomingMilestones = roadmap.milestones
       .filter((m) => m.status === 'locked' || m.status === 'available')
       .filter((m) => m.skill !== currentMilestone?.skill)
       .slice(0, 5)
-      .map((m) => ({ skill: m.skill, status: m.status, estimatedWeeks: m.estimatedWeeks, lockedReason: lockedReasonFor(m) }));
+      .map((m) => ({ skill: m.skill, status: m.status, estimatedHours: m.estimatedHours, lockedReason: lockedReasonFor(m) }));
   }
 
   const assessmentHistorySummary: LearnerContextAssessmentSummary[] = assessmentHistory

@@ -23,9 +23,8 @@ const DEMO_SKILLS = [
 ];
 
 export default function Settings() {
-  const { learnerId, profile, setProfile, resetMilestoneOverrides } = useLearner();
+  const { learnerId, profile, setProfile } = useLearner();
   const [aiStatus, setAiStatus] = useState<AIStatus | null>(null);
-  const [cleared, setCleared] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoMessage, setDemoMessage] = useState<string | null>(null);
 
@@ -40,12 +39,6 @@ export default function Settings() {
       ...profile,
       learningPreferences: has ? profile.learningPreferences.filter((t) => t !== tag) : [...profile.learningPreferences, tag],
     });
-  }
-
-  function handleClearOverrides() {
-    resetMilestoneOverrides();
-    setCleared(true);
-    setTimeout(() => setCleared(false), 2000);
   }
 
   async function handleSimulate(outcome: 'strong' | 'weak') {
@@ -70,7 +63,6 @@ export default function Settings() {
     setDemoMessage(null);
     try {
       await api.devReset(learnerId);
-      resetMilestoneOverrides();
       setDemoMessage('Demo progress reset for this learner.');
     } catch {
       setDemoMessage('Reset failed — dev routes are only available when the backend runs outside production mode.');
@@ -110,25 +102,6 @@ export default function Settings() {
           ) : (
             <p className="text-ink-muted text-sm">Complete the assessment to set learning preferences.</p>
           )}
-        </section>
-
-        <section className="p-5 rounded-xl bg-white border border-line shadow-sm">
-          <h2 className="text-ink font-semibold text-sm mb-1">Local Progress</h2>
-          <p className="text-ink-muted text-xs mb-3">
-            Milestone "in progress" / "completed" marks are stored only in this browser.
-          </p>
-          <button
-            onClick={handleClearOverrides}
-            className="px-4 py-2 rounded-lg bg-white hover:bg-surface-secondary border border-line text-ink-secondary text-sm font-medium transition-colors"
-          >
-            {cleared ? (
-              <span className="inline-flex items-center gap-1.5">
-                <CircleCheck size={14} strokeWidth={1.75} aria-hidden="true" /> Cleared
-              </span>
-            ) : (
-              'Clear my local progress'
-            )}
-          </button>
         </section>
 
         {isDevMode && (

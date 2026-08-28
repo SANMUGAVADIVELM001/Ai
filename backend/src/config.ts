@@ -52,19 +52,28 @@ export const SUFFICIENCY_MARGIN = 0;
 // ---- Roadmap generation ----
 
 export const ROADMAP_CONFIG = {
-  // Used when the learner profile has no study time captured.
+  // Used when the learner profile has no study time captured and no pacing
+  // has been confirmed yet.
   defaultStudyTimePerDayHours: 1,
-  // Mastery points (0-100 scale) gained per hour of focused study. A single
-  // blended rate is used since the roadmap operates on collapsed mastery
-  // scores, not per-question difficulty mix.
-  masteryPointsPerHour: 2.5,
-  // Assumed active study days per week (rest days excluded).
-  daysPerWeekAssumed: 5,
-  // Minimum weeks shown for any non-trivial milestone, so estimates never
-  // round down to "0 weeks" for a skill that still needs work.
-  minWeeksPerMilestone: 1,
-  // How many top-ranked resources to attach to each roadmap milestone.
+  // How many top-ranked resources to attach to each roadmap milestone. Also
+  // doubles as the divisor in computeBaselineHours (moduleTimeEngine.ts) —
+  // a module's baseline hours approximate "time to complete the resources
+  // this learner will actually be shown," not the whole resource library.
   resourcesPerMilestone: 3,
+  // Baseline hours assigned to a skill with no resources.json entries at all,
+  // so the hours formula never divides by / produces zero for a skill that
+  // still needs to be scheduled.
+  fallbackBaselineHours: 4,
+  // Floor on estimated hours for any module with a nonzero mastery gap, so a
+  // small residual gap never rounds down to 0 hours.
+  minHoursPerModule: 0.5,
+  // Upper bound on the daily study time we'll ever recommend as the
+  // "minimum feasible" plan — used to compute the minimum number of days a
+  // learner needs, and to size the "recommended" (unhurried) option.
+  maxStudyHoursPerDayCap: 8,
+  // Floor on the displayed daily study time so a very generous day count
+  // never computes to an implausibly tiny daily commitment.
+  minStudyHoursPerDayFloor: 0.25,
 };
 
 // ---- Recommendation scoring ----

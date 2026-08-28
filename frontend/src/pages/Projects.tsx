@@ -17,7 +17,6 @@ const STATUS_BADGE: Record<MilestoneStatus, { icon: LucideIcon; label: string; c
 };
 
 export default function Projects() {
-  const { effectiveStatus } = useLearner();
   const { roadmap, loading, needsAnalysis } = useEnsureRoadmap();
 
   if (loading) return <p className="text-ink-secondary">Loading projects...</p>;
@@ -36,7 +35,7 @@ export default function Projects() {
 
   const withProjects = roadmap.milestones
     .filter((m): m is RoadmapMilestone & { project: NonNullable<RoadmapMilestone['project']> } => m.project !== null)
-    .map((m) => ({ milestone: m, status: effectiveStatus(m.id, m.status) }));
+    .map((m) => ({ milestone: m, status: m.status }));
 
   if (withProjects.length === 0) {
     return (

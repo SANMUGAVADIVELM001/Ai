@@ -10,7 +10,7 @@ export function buildRoadmapExplanationPrompt(roadmap: Roadmap): string {
     .map(
       (m, i) =>
         `${i + 1}. ${m.skill} — status: ${m.status}, mastery ${m.currentMastery}%/${m.targetMastery}% required${
-          m.isVerifiedSufficient ? ' (already sufficient, verified by assessment)' : `, ~${m.estimatedWeeks} weeks`
+          m.isVerifiedSufficient ? ' (already sufficient, verified by assessment)' : `, ~${m.estimatedHours}h`
         }`
     )
     .join('\n');

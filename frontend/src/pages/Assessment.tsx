@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { Sparkles, CircleCheck, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../api.js';
 import { useLearner } from '../context/LearnerContext.js';
 import { useEnsureAnalysis } from '../hooks/useEnsureData.js';
 import ProgressBar from '../components/ProgressBar.js';
-import { LEARNING_PREFERENCE_OPTIONS, type AssessmentQuestion, type RoleSummary, type SubmitAnswerResponse } from '../types.js';
+import {
+  LEARNING_PREFERENCE_OPTIONS,
+  type AssessmentQuestion,
+  type PacingChoice,
+  type PlanOptionsResult,
+  type RoleSummary,
+  type SubmitAnswerResponse,
+} from '../types.js';
 
 const EXAMPLE_GOALS = [
   'I want to become a Machine Learning Engineer in 6 months. I know basic Python and can study 2 hours per day.',
@@ -15,7 +22,8 @@ const EXAMPLE_GOALS = [
   'I want to become a Data Analyst in 3 months. I know Excel, and can study 2 hours per day.',
 ];
 
-type Step = 'goal' | 'intro' | 'test' | 'result';
+type Step = 'goal' | 'intro' | 'test' | 'result' | 'pacing';
+const STEPS: Step[] = ['goal', 'intro', 'test', 'result', 'pacing'];
 
 /**
  * Single sidebar-reachable "Assessment" page. Internally steps through
@@ -38,7 +46,7 @@ export default function Assessment() {
 
   const [step, setStepState] = useState<Step>(() => {
     const fromUrl = searchParams.get('step') as Step | null;
-    if (fromUrl && ['goal', 'intro', 'test', 'result'].includes(fromUrl)) return fromUrl;
+    if (fromUrl && STEPS.includes(fromUrl)) return fromUrl;
     if (sessionId && analysis) return 'result';
     if (sessionId) return 'test';
     if (profile) return 'intro';
@@ -64,7 +72,7 @@ export default function Assessment() {
   // outside our own setStep calls (i.e. a popstate), sync local state to it.
   useEffect(() => {
     const fromUrl = searchParams.get('step') as Step | null;
-    if (fromUrl && fromUrl !== step && ['goal', 'intro', 'test', 'result'].includes(fromUrl)) {
+    if (fromUrl && fromUrl !== step && STEPS.includes(fromUrl)) {
       setStepState(fromUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,7 +95,8 @@ export default function Assessment() {
   if (step === 'goal') return <GoalStep onDone={() => setStep('intro')} />;
   if (step === 'intro') return <IntroStep onDone={() => setStep('test')} onBack={() => setStep('goal')} />;
   if (step === 'test') return <TestStep onDone={() => setStep('result')} />;
-  return <ResultStep onRetake={() => setStep('goal')} />;
+  if (step === 'result') return <ResultStep onRetake={() => setStep('goal')} onDone={() => setStep('pacing')} />;
+  return <PacingStep />;
 }
 
 function GoalStep({ onDone }: { onDone: () => void }) {
@@ -446,7 +455,7 @@ function TestStep({ onDone }: { onDone: () => void }) {
   );
 }
 
-function ResultStep({ onRetake }: { onRetake: () => void }) {
+function ResultStep({ onRetake, onDone }: { onRetake: () => void; onDone: () => void }) {
   const { analysis } = useLearner();
   if (!analysis) return <p className="text-ink-secondary">Loading your results...</p>;
 
@@ -472,12 +481,12 @@ function ResultStep({ onRetake }: { onRetake: () => void }) {
       </div>
 
       <div className="flex items-center justify-center gap-4">
-        <Link
-          to="/skills"
+        <button
+          onClick={onDone}
           className="px-8 py-3 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold transition-colors"
         >
-          View My Skills
-        </Link>
+          Set My Study Pace →
+        </button>
         <button
           onClick={onRetake}
           className="px-6 py-3 rounded-lg bg-white hover:bg-surface-secondary border border-line text-ink-secondary text-sm font-medium transition-colors"
@@ -485,6 +494,142 @@ function ResultStep({ onRetake }: { onRetake: () => void }) {
           Retake with a new goal
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Final onboarding step: asks how many days the learner has available, shows
+ * either a single feasible plan or a recommended-vs-accelerated choice when
+ * the requested timeline is too short, and persists the chosen pacing before
+ * routing to the roadmap. Skipped straight through if this role already has
+ * a confirmed pacing (idempotent re-entry, e.g. via browser Back).
+ */
+function PacingStep() {
+  const { profile, roadmap, setRoadmap } = useLearner();
+  const [availableDays, setAvailableDays] = useState('');
+  const [options, setOptions] = useState<PlanOptionsResult | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!profile?.roleId) return <Navigate to="/assessment" replace />;
+  if (roadmap?.pacing) return <Navigate to="/roadmap" replace />;
+
+  async function handleCheck() {
+    const days = Number(availableDays);
+    if (!profile!.roleId || !Number.isFinite(days) || days <= 0) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const result = await api.getRoadmapPlanOptions(profile!.roleId, days);
+      setOptions(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function handleConfirm(days: number, hoursPerDay: number, chosenPlan: PacingChoice) {
+    if (!profile!.roleId || confirming) return;
+    setConfirming(true);
+    setError(null);
+    try {
+      const { roadmap: nextRoadmap } = await api.confirmPacing(profile!, profile!.roleId, days, hoursPerDay, chosenPlan);
+      setRoadmap(nextRoadmap);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong');
+      setConfirming(false);
+    }
+  }
+
+  if (confirming) return <p className="text-ink-secondary">Building your roadmap...</p>;
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-ink mb-2">How many days do you have?</h1>
+      <p className="text-ink-secondary mb-6">
+        Tell us how many days you have available, and we'll turn your measured skill gaps into a day-by-day study
+        plan — modules with bigger gaps get more time, and skills you've already mastered need little to none.
+      </p>
+
+      <div className="flex items-end gap-3 mb-6">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-ink-secondary text-sm font-medium">Available days</span>
+          <input
+            type="number"
+            min={1}
+            value={availableDays}
+            onChange={(e) => {
+              setAvailableDays(e.target.value);
+              setOptions(null);
+            }}
+            placeholder="e.g. 60"
+            className="w-40 rounded-lg bg-white border border-line focus:border-brand-500 outline-none px-4 py-2.5 text-ink"
+          />
+        </label>
+        <button
+          onClick={handleCheck}
+          disabled={checking || !availableDays}
+          className="px-5 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white font-semibold transition-colors"
+        >
+          {checking ? 'Checking...' : 'Check My Timeline'}
+        </button>
+      </div>
+
+      {error && <p className="text-error text-sm mb-4">{error}</p>}
+
+      {options?.feasible && (
+        <div className="p-5 rounded-xl bg-success-bg border border-success mb-6">
+          <p className="text-success text-sm font-semibold mb-2">That works.</p>
+          <p className="text-ink-secondary text-sm mb-4">
+            About {options.totalHoursNeeded}h of study spread across {options.availableDays} days comes to{' '}
+            <span className="text-ink font-semibold">{options.studyHoursPerDay}h/day</span>.
+          </p>
+          <button
+            onClick={() => handleConfirm(options.availableDays, options.studyHoursPerDay, 'as_requested')}
+            className="px-6 py-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold transition-colors"
+          >
+            Build My Roadmap →
+          </button>
+        </div>
+      )}
+
+      {options && !options.feasible && (
+        <div className="p-5 rounded-xl bg-warning-bg border border-warning mb-6">
+          <p className="text-warning text-sm font-semibold mb-2">
+            {options.requestedDays} day{options.requestedDays === 1 ? '' : 's'} isn't quite enough time.
+          </p>
+          <p className="text-ink-secondary text-sm mb-4">{options.reason}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-lg bg-white border border-line">
+              <p className="text-ink font-semibold text-sm mb-1">Recommended</p>
+              <p className="text-ink-secondary text-sm mb-3">
+                {options.recommended.days} days at {options.recommended.hoursPerDay}h/day
+              </p>
+              <button
+                onClick={() => handleConfirm(options.recommended.days, options.recommended.hoursPerDay, 'recommended')}
+                className="w-full px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition-colors"
+              >
+                Use Recommended
+              </button>
+            </div>
+            <div className="p-4 rounded-lg bg-white border border-line">
+              <p className="text-ink font-semibold text-sm mb-1">Accelerated</p>
+              <p className="text-ink-secondary text-sm mb-3">
+                {options.accelerated.days} days at {options.accelerated.hoursPerDay}h/day
+              </p>
+              <button
+                onClick={() => handleConfirm(options.accelerated.days, options.accelerated.hoursPerDay, 'accelerated')}
+                className="w-full px-4 py-2 rounded-lg border border-brand-500 text-brand-500 hover:bg-brand-50 text-sm font-semibold transition-colors"
+              >
+                Use Accelerated
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

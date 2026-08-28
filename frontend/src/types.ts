@@ -167,7 +167,7 @@ export interface RoadmapMilestone {
   currentMastery: number;
   targetMastery: number;
   gap: number;
-  estimatedWeeks: number;
+  estimatedHours: number;
   order: number;
   prerequisiteStatus: PrerequisiteStatus;
   unsatisfiedPrerequisites: string[];
@@ -177,16 +177,45 @@ export interface RoadmapMilestone {
   whyRecommended: string;
 }
 
+export type PacingChoice = 'recommended' | 'accelerated' | 'as_requested';
+
+export interface LearnerPacing {
+  availableDays: number;
+  studyHoursPerDay: number;
+  chosenPlan: PacingChoice;
+  confirmedAt: number;
+}
+
 export interface Roadmap {
   roleId: string;
   roleTitle: string;
   generatedAt: number;
-  totalEstimatedWeeks: number;
+  totalEstimatedHours: number;
+  totalEstimatedDays: number;
   studyTimePerDayHours: number;
   targetDuration: string | null;
+  pacing: LearnerPacing | null;
   milestones: RoadmapMilestone[];
   progress: { completed: number; total: number; percentComplete: number };
 }
+
+export interface PlanOptionFeasible {
+  feasible: true;
+  studyHoursPerDay: number;
+  totalHoursNeeded: number;
+  availableDays: number;
+}
+
+export interface PlanOptionInfeasible {
+  feasible: false;
+  requestedDays: number;
+  recommended: { days: number; hoursPerDay: number };
+  accelerated: { days: number; hoursPerDay: number };
+  totalHoursNeeded: number;
+  reason: string;
+}
+
+export type PlanOptionsResult = PlanOptionFeasible | PlanOptionInfeasible;
 
 export const LEARNING_PREFERENCE_OPTIONS = [
   { tag: 'video', label: 'Videos' },
